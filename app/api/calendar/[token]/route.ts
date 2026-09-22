@@ -30,6 +30,7 @@ export async function GET(
     description: `לוח ימי פטירה (יארצייט) עבור ${membership.user_name}`,
     timezone: 'Asia/Jerusalem',
     method: ICalCalendarMethod.PUBLISH,
+    ttl: 3600, // Re-fetch every 1 hour
   });
 
   // Calculate upcoming yahrzeits for the next 10 years for each deceased person
@@ -61,6 +62,8 @@ export async function GET(
         start: startDate,
         end: endDate,
         allDay: true,
+        sequence: 1,
+        stamp: new Date(),
         summary: `יארצייט: ${displayName} ז"ל${yearsPassedText}`,
         description: [
           `יום השנה לפטירת ${displayName}${parentName} ז"ל`,
