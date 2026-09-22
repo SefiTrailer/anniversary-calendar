@@ -262,28 +262,28 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                   {/* Deceased Names Header */}
                   <div>
                     <div className="flex items-baseline gap-2 flex-wrap">
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight font-serif">
                         {person.first_name}
                       </h3>
-                      <span className="text-xl font-black text-blue-900 tracking-tight">
+                      <span className="text-2xl font-black text-blue-950 tracking-tight font-serif">
                         {person.last_name}
                       </span>
-                      <span className="text-xs font-extrabold text-slate-400">ז״ל</span>
+                      <span className="text-sm font-extrabold text-slate-400 font-serif">ז״ל</span>
                     </div>
                     {person.father_or_mother_name && (
-                      <p className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5 flex items-center gap-1 font-serif">
                         <span>לעילוי נשמת:</span>
-                        <span className="text-slate-700 font-bold">{person.father_or_mother_name}</span>
+                        <span className="text-slate-800 font-bold">{person.father_or_mother_name}</span>
                       </p>
                     )}
                   </div>
 
                   {/* Hebrew Date Primary, Gregorian Original in Parentheses */}
                   <div className="bg-gradient-to-r from-amber-50/70 via-amber-50/40 to-slate-50 p-3.5 rounded-2xl border border-amber-200/70 space-y-1 shadow-2xs">
-                    <span className="text-[11px] font-bold text-amber-900 block">
+                    <span className="text-[11px] font-bold text-amber-900 block font-serif">
                       תאריך פטירה מקורי:
                     </span>
-                    <p className="text-sm font-extrabold text-slate-900 tracking-wide">
+                    <p className="text-base font-black text-slate-900 tracking-wide font-serif">
                       {dateDisplay}
                     </p>
                     {person.after_sunset && (
@@ -304,14 +304,14 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-between font-extrabold">
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5 font-serif text-sm">
                           <Flame
                             className={`w-4 h-4 ${isComingSoon ? 'text-amber-600 animate-pulse' : 'text-slate-500'}`}
                           />
                           <span>היארצייט הקרוב:</span>
                         </span>
                         <span
-                          className={`text-[11px] px-2.5 py-0.5 rounded-full font-black ${
+                          className={`text-[11px] px-2.5 py-0.5 rounded-full font-black font-serif ${
                             isComingSoon
                               ? 'bg-amber-500 text-white shadow-2xs'
                               : 'bg-slate-200 text-slate-700'
@@ -322,9 +322,9 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between text-slate-700">
-                        <p className="font-semibold text-slate-900">
+                        <p className="font-bold text-slate-900 font-serif text-sm">
                           {upcoming.hebrewDateStr} &bull;{' '}
-                          <span className="font-bold">
+                          <span className="font-medium text-xs font-sans">
                             {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
                               weekday: 'short',
                               year: 'numeric',

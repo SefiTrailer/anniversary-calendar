@@ -23,7 +23,9 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        sans: ['var(--font-assistant)', 'system-ui', '-apple-system', 'sans-serif'],
+        serif: ['var(--font-frank-ruhl)', 'Frank Ruhl Libre', 'David', 'Georgia', 'serif'],
+        traditional: ['var(--font-frank-ruhl)', 'Frank Ruhl Libre', 'David', 'serif'],
       }
     },
   },

@@ -10,6 +10,7 @@ import { NewCalendarModal } from '@/components/NewCalendarModal';
 import { AuthModal } from '@/components/AuthModal';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
 import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
+import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
 import {
   Flame,
@@ -24,8 +25,12 @@ import {
 } from 'lucide-react';
 
 export default function HomePage() {
-  // Current User State
-  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+  // Current User State - dynamically resolved from Google/Supabase Auth
+  const [currentUser, setCurrentUser] = useState<{
+    email: string;
+    name: string;
+    avatar?: string | null;
+  } | null>(null);
 
   // App Data State
   const [calendars, setCalendars] = useState<CalendarProject[]>([]);
@@ -44,27 +49,87 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
 
-  // Initialize User from storage or default
+  // Initialize User from active Supabase / Google OAuth session
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('ner_neshama_user');
-      if (stored) {
-        setCurrentUser(JSON.parse(stored));
-      } else {
-        // Default authenticated session for the owner
-        const defaultUser = {
-          email: 'shalomyosefzeev@gmail.com',
-          name: 'שלום יוסף זאב',
-        };
-        setCurrentUser(defaultUser);
-        localStorage.setItem('ner_neshama_user', JSON.stringify(defaultUser));
+    let isMounted = true;
+
+    const initAuth = async () => {
+      try {
+        // 1. Check if user is signed in via Supabase (e.g. Google OAuth)
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          const googleFullName =
+            session.user.user_metadata?.full_name ||
+            session.user.user_metadata?.name ||
+            session.user.email?.split('@')[0] ||
+            'משתמש';
+
+          const googleUser = {
+            email: session.user.email || '',
+            name: googleFullName,
+            avatar: (session.user.user_metadata?.avatar_url as string) || null,
+          };
+
+          if (isMounted) {
+            setCurrentUser(googleUser);
+            localStorage.setItem('ner_neshama_user', JSON.stringify(googleUser));
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Supabase auth session check notice:', err);
       }
-    } catch {
-      setCurrentUser({
-        email: 'shalomyosefzeev@gmail.com',
-        name: 'שלום יוסף זאב',
-      });
-    }
+
+      // 2. Check local storage if no active Supabase session
+      try {
+        const stored = localStorage.getItem('ner_neshama_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          // If stored name is the old hardcoded 'שלום יוסף זאב' placeholder, clean it to email username
+          if (parsed.name === 'שלום יוסף זאב' && parsed.email) {
+            parsed.name = parsed.email.split('@')[0];
+            localStorage.setItem('ner_neshama_user', JSON.stringify(parsed));
+          }
+          if (isMounted) {
+            setCurrentUser(parsed);
+          }
+        }
+      } catch {}
+    };
+
+    initAuth();
+
+    // 3. Listen to Supabase Auth state changes (Google OAuth callback redirect)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const googleFullName =
+          session.user.user_metadata?.full_name ||
+          session.user.user_metadata?.name ||
+          session.user.email?.split('@')[0] ||
+          'משתמש';
+
+        const googleUser = {
+          email: session.user.email || '',
+          name: googleFullName,
+          avatar: (session.user.user_metadata?.avatar_url as string) || null,
+        };
+        setCurrentUser(googleUser);
+        localStorage.setItem('ner_neshama_user', JSON.stringify(googleUser));
+      } else if (_event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        localStorage.removeItem('ner_neshama_user');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   // Today's Hebrew date string
@@ -77,13 +142,14 @@ export default function HomePage() {
     }
   }, []);
 
-  // Load data for current user
+  // Load data for calendar
   const loadData = async (calendarId?: string) => {
-    if (!currentUser) return;
     try {
+      const userEmail = currentUser?.email || 'shalomyosefzeev@gmail.com';
+      const userName = currentUser?.name || 'אורח';
       const queryParams = new URLSearchParams({
-        userEmail: currentUser.email,
-        userName: currentUser.name,
+        userEmail,
+        userName,
       });
       if (calendarId) {
         queryParams.set('calendarId', calendarId);
@@ -113,9 +179,7 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    if (currentUser) {
-      loadData();
-    }
+    loadData();
   }, [currentUser]);
 
   const handleSelectCalendar = async (cal: CalendarProject) => {
@@ -243,7 +307,7 @@ export default function HomePage() {
     setIsAuthModalOpen(true);
   };
 
-  const handleAuthSuccess = (user: { email: string; name: string }) => {
+  const handleAuthSuccess = (user: { email: string; name: string; avatar?: string | null }) => {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
   };
@@ -304,12 +368,12 @@ export default function HomePage() {
           <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
             <div className="space-y-3 max-w-2xl">
               {/* Hebrew Date Pill */}
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
                 <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
                 <span>היום: {todayHebrewDate || 'לוח השנה העברי'}</span>
               </div>
 
-              <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
+              <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
                 {currentCalendar?.name || 'טוען יומן משפחתי...'}
               </h2>
 
@@ -348,9 +412,9 @@ export default function HomePage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
                 <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
-                <span>אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})</span>
+                <span className="font-serif font-black text-lg">אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})</span>
               </div>
-              <span className="text-xs font-bold text-amber-800 bg-amber-200/60 px-3 py-1 rounded-full">
+              <span className="text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
                 זכרון להולכים
               </span>
             </div>
@@ -363,15 +427,15 @@ export default function HomePage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="text-base font-black text-slate-900 block leading-tight">
+                      <span className="text-lg font-black text-slate-900 block leading-tight font-serif">
                         {person.first_name} {person.last_name} ז״ל
                       </span>
                       {person.father_or_mother_name && (
-                        <span className="text-[11px] text-slate-500 font-semibold block mt-0.5">
-                          {person.father_or_mother_name}
+                        <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
+                          לעילוי נשמת {person.father_or_mother_name}
                         </span>
                       )}
-                      <span className="text-xs font-bold text-amber-900 block mt-1.5">
+                      <span className="text-sm font-bold text-amber-900 block mt-1.5 font-serif">
                         {upcoming.hebrewDateStr} &bull;{' '}
                         {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
                           weekday: 'short',
@@ -387,7 +451,7 @@ export default function HomePage() {
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400">
+                    <span className="text-[11px] font-bold text-slate-500 font-serif">
                       {formatAnniversaryYearText(upcoming.yearsPassed)}
                     </span>
                     <a

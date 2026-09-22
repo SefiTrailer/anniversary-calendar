@@ -26,7 +26,7 @@ interface HeaderProps {
   onOpenSync: () => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
-  currentUser: { email: string; name: string } | null;
+  currentUser: { email: string; name: string; avatar?: string | null } | null;
   membership: UserMembership | null;
   isAdmin: boolean;
 }
@@ -79,10 +79,10 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
+                  <h1 className="text-2xl font-black text-slate-900 tracking-tight font-serif">
                     נר נשמה
                   </h1>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/70">
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 font-serif">
                     ימי פטירה ויארצייט
                   </span>
                 </div>
@@ -97,9 +97,13 @@ export const Header: React.FC<HeaderProps> = ({
               {currentUser ? (
                 <button
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center"
+                  className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden"
                 >
-                  {userInitials}
+                  {currentUser.avatar ? (
+                    <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" />
+                  ) : (
+                    userInitials
+                  )}
                 </button>
               ) : (
                 <button
@@ -177,8 +181,12 @@ export const Header: React.FC<HeaderProps> = ({
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                     className="flex items-center gap-2 p-1 pl-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-xs"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-                      {userInitials}
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-center shadow-xs overflow-hidden">
+                      {currentUser.avatar ? (
+                        <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" />
+                      ) : (
+                        userInitials
+                      )}
                     </div>
                     <div className="text-right leading-tight max-w-[120px] truncate">
                       <span className="block text-xs font-bold text-slate-800 truncate">
