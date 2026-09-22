@@ -462,7 +462,18 @@ export default function HomePage() {
                   </button>
 
                   <button
-                    onClick={() => setIsAuthModalOpen(true)}
+                    onClick={async () => {
+                      try {
+                        await supabase.auth.signInWithOAuth({
+                          provider: 'google',
+                          options: {
+                            redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+                          },
+                        });
+                      } catch {
+                        setIsAuthModalOpen(true);
+                      }
+                    }}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-4 bg-white/10 hover:bg-white/15 text-slate-100 rounded-2xl font-bold text-sm backdrop-blur-md border border-white/15 transition cursor-pointer"
                   >
                     <Flame className="w-4 h-4 text-amber-400" />
