@@ -27,44 +27,37 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
 
-  // Load data from API
+  const [currentUser, setCurrentUser] = useState({
+    email: 'shalomyosefzeev@gmail.com',
+    name: 'שלום יוסף זאב',
+  });
+
+  // Load data from API with user isolation
   const loadData = async (calendarId?: string) => {
     try {
-      const url = calendarId ? `/api/data?calendarId=${calendarId}` : '/api/data';
-      const res = await fetch(url);
+      const queryParams = new URLSearchParams({
+        userEmail: currentUser.email,
+        userName: currentUser.name,
+      });
+      if (calendarId) {
+        queryParams.set('calendarId', calendarId);
+      }
+
+      const res = await fetch(`/api/data?${queryParams.toString()}`);
       const data = await res.json();
 
       if (data.calendars && data.calendars.length > 0) {
         setCalendars(data.calendars);
         const selected = calendarId
-          ? data.calendars.find((c: CalendarProject) => c.id === calendarId)
+          ? data.calendars.find((c: CalendarProject) => c.id === calendarId) || data.calendars[0]
           : data.calendars[0];
 
         setCurrentCalendar(selected);
-
-        // Fetch details for selected
-        if (calendarId && data.branches) {
-          setBranches(data.branches);
-          setDeceased(data.deceased || []);
-        } else {
-          // get for the first one
-          const subRes = await fetch(`/api/data?calendarId=${selected.id}`);
-          const subData = await subRes.json();
-          setBranches(subData.branches || []);
-          setDeceased(subData.deceased || []);
+        setBranches(data.branches || []);
+        setDeceased(data.deceased || []);
+        if (data.membership) {
+          setMembership(data.membership);
         }
-
-        // Set default membership
-        const member = data.memberships?.find((m: UserMembership) => m.calendar_id === selected?.id) || {
-          id: 'mem-user',
-          calendar_id: selected.id,
-          user_email: 'sefi@example.com',
-          user_name: 'ספי ישראלי',
-          role: 'admin',
-          feed_token: 'feed-all-branches-demo',
-          selected_branch_ids: (data.branches || []).map((b: FamilyBranch) => b.id),
-        };
-        setMembership(member);
       }
     } catch (err) {
       console.error('Error loading calendar data:', err);
@@ -156,8 +149,8 @@ export default function HomePage() {
         payload: {
           name,
           description,
-          user_name: 'ספי ישראלי',
-          user_email: 'sefi@example.com',
+          user_name: currentUser.name,
+          user_email: currentUser.email,
         },
       }),
     });

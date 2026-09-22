@@ -200,6 +200,57 @@ export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears:
   return results;
 }
 
+export function formatAnniversaryYearText(yearsPassed: number): string {
+  if (yearsPassed <= 0) return 'שנת הפטירה';
+  if (yearsPassed === 1) return 'יום השנה הראשון';
+  if (yearsPassed === 2) return 'שנתיים לפטירה';
+  return `שנת ה-${yearsPassed} לפטירה`;
+}
+
+/**
+ * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit event.
+ */
+export function getGoogleCalendarDirectAddUrl(
+  person: DeceasedRecord,
+  upcoming: UpcomingYahrzeit,
+  branchName?: string
+): string {
+  const displayName = `${person.first_name} ${person.last_name}`.trim();
+  const title = `יארצייט: ${displayName} ז"ל (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+  const originalDate = formatDisplayDateWithGregorian(
+    person.hebrew_day,
+    person.hebrew_month,
+    person.hebrew_year,
+    person.gregorian_original_date
+  );
+
+  const details = [
+    `יום השנה לפטירת ${displayName} ז"ל`,
+    `תאריך עברי מקורי: ${originalDate}`,
+    branchName ? `ענף משפחתי: ${branchName}` : '',
+    person.notes ? `הערות ומנהגים: ${person.notes}` : '',
+    person.after_sunset ? 'הערה: הפטירה אירעה לאחר צאת הכוכבים / השקיעה.' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const start = new Date(upcoming.gregorianDate);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  const startStr = start.toISOString().slice(0, 10).replace(/-/g, '');
+  const endStr = end.toISOString().slice(0, 10).replace(/-/g, '');
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${startStr}/${endStr}`,
+    details: details,
+  });
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 /**
  * Checks for conflicts or discrepancies when adding or updating a deceased record.
  * Detects if a person with the same First Name and Last Name already exists in the calendar,

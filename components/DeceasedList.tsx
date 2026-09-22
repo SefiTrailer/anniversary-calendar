@@ -6,6 +6,8 @@ import {
   formatDisplayDateWithGregorian,
   calculateUpcomingYahrzeits,
   HEBREW_MONTHS_TRANSLATION,
+  formatAnniversaryYearText,
+  getGoogleCalendarDirectAddUrl,
 } from '@/lib/hebrew-calendar';
 import { Search, Flame, Edit2, Trash2, Sunset, Calendar, Filter, MapPin } from 'lucide-react';
 
@@ -215,14 +217,14 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
 
                   {/* Upcoming Yahrzeit Badge */}
                   {upcoming && (
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1">
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-2">
                       <div className="flex items-center justify-between text-amber-950 font-bold">
                         <span className="flex items-center gap-1">
                           <Flame className="w-3.5 h-3.5 text-amber-600" />
                           היארצייט הקרוב:
                         </span>
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200/60 text-amber-900 font-semibold">
-                          שנת ה-{upcoming.yearsPassed} לפטירה
+                          {formatAnniversaryYearText(upcoming.yearsPassed)}
                         </span>
                       </div>
                       <p className="text-slate-700 font-medium">
@@ -236,6 +238,18 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                           })}
                         </span>
                       </p>
+                      <div className="pt-1 flex items-center justify-end">
+                        <a
+                          href={getGoogleCalendarDirectAddUrl(person, upcoming, branch?.name)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg transition shadow-xs"
+                          title="הוסף יארצייט קרוב זה ישירות ליומן גוגל שלך ללא המתנה לסנכרון"
+                        >
+                          <Calendar className="w-3 h-3 text-blue-600" />
+                          <span>הוסף מיד ל-Google Calendar</span>
+                        </a>
+                      </div>
                     </div>
                   )}
 

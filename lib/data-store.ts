@@ -166,6 +166,61 @@ export const DataStore = {
     return getCache().calendars.find(c => c.id === calendarId);
   },
 
+  async getUserCalendars(userEmail: string): Promise<CalendarProject[]> {
+    try {
+      const [ownedRes, memberRes] = await Promise.all([
+        supabase.from('calendars').select('*').eq('created_by_user_id', userEmail),
+        supabase.from('calendar_members').select('calendar_id').eq('user_email', userEmail),
+      ]);
+
+      const calendarIds = new Set<string>();
+      const list: CalendarProject[] = [];
+
+      (ownedRes.data || []).forEach((c: any) => {
+        calendarIds.add(c.id);
+        list.push(c as CalendarProject);
+      });
+
+      const memberCalIds = (memberRes.data || [])
+        .map((m: any) => m.calendar_id)
+        .filter((id: string) => !calendarIds.has(id));
+
+      if (memberCalIds.length > 0) {
+        const { data: moreCals } = await supabase.from('calendars').select('*').in('id', memberCalIds);
+        (moreCals || []).forEach((c: any) => list.push(c as CalendarProject));
+      }
+
+      if (list.length > 0) return list;
+    } catch {
+      // fallback
+    }
+
+    const cache = getCache();
+    const allowed = cache.calendars.filter(c => {
+      if (c.created_by_user_id === userEmail) return true;
+      return cache.memberships.some(m => m.calendar_id === c.id && m.user_email === userEmail);
+    });
+    return allowed.length > 0 ? allowed : [cache.calendars[0]];
+  },
+
+  async getUserMembership(calendarId: string, userEmail: string): Promise<UserMembership | null> {
+    try {
+      const { data } = await supabase
+        .from('calendar_members')
+        .select('*')
+        .eq('calendar_id', calendarId)
+        .eq('user_email', userEmail)
+        .maybeSingle();
+
+      if (data) return data as UserMembership;
+    } catch {
+      // fallback
+    }
+
+    const cache = getCache();
+    return cache.memberships.find(m => m.calendar_id === calendarId && m.user_email === userEmail) || null;
+  },
+
   async addCalendar(calendar: CalendarProject) {
     try {
       const { data } = await supabase.from('calendars').insert(calendar).select().single();

@@ -6,22 +6,60 @@ import crypto from 'crypto';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const calendarId = searchParams.get('calendarId');
+  const userEmail = searchParams.get('userEmail') || 'sefi@example.com';
+  const userName = searchParams.get('userName') || 'ספי ישראלי';
 
-  const allData = await DataStore.getAll();
+  // 1. Fetch only calendars accessible to this user
+  const userCalendars = await DataStore.getUserCalendars(userEmail);
+
   if (calendarId) {
+    // Verify user has access to this calendar
+    const hasAccess = userCalendars.some(c => c.id === calendarId);
+    if (!hasAccess && userCalendars.length > 0) {
+      return NextResponse.json({ error: 'אין לך הרשאה לצפות ביומן זה' }, { status: 403 });
+    }
+
     const calendar = await DataStore.getCalendar(calendarId);
+    if (!calendar) {
+      return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
+    }
+
     const branches = await DataStore.getBranches(calendarId);
     const deceased = await DataStore.getDeceased(calendarId);
-    return NextResponse.json({ calendar, branches, deceased, calendars: allData.calendars });
+
+    // Fetch or create membership ONLY for this requesting user (protecting all other users' emails/tokens!)
+    let membership = await DataStore.getUserMembership(calendarId, userEmail);
+    if (!membership) {
+      const isOwner = calendar.created_by_user_id === userEmail;
+      membership = {
+        id: crypto.randomUUID(),
+        calendar_id: calendarId,
+        user_email: userEmail,
+        user_name: userName,
+        role: isOwner ? 'admin' : 'member',
+        feed_token: crypto.randomUUID(),
+        selected_branch_ids: branches.map(b => b.id),
+      };
+      await DataStore.saveMembership(membership);
+    }
+
+    return NextResponse.json({
+      calendar,
+      branches,
+      deceased,
+      membership,
+      calendars: userCalendars,
+    });
   }
 
-  return NextResponse.json(allData);
+  // If no calendarId requested, return only the user's calendars list
+  return NextResponse.json({ calendars: userCalendars });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, payload } = body;
+    const { action, payload, userEmail = 'sefi@example.com' } = body;
 
     switch (action) {
       case 'add_deceased': {
@@ -108,7 +146,7 @@ export async function POST(request: NextRequest) {
         };
         await DataStore.addCalendar(newCalendar);
 
-        // Add a default main branch
+        // Add default main branch
         const defaultBranch = {
           id: crypto.randomUUID(),
           calendar_id: calendarId,
