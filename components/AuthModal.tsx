@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { X, Flame, Mail, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { X, Flame, Mail, ArrowRight, ShieldCheck, CheckCircle2, Info } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -14,7 +14,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [showSetupHelp, setShowSetupHelp] = useState(false);
 
   if (!isOpen) return null;
 
@@ -23,18 +24,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setIsSubmitting(true);
     setMessage(null);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+          skipBrowserRedirect: true,
         },
       });
+
       if (error) throw error;
+
+      if (data?.url) {
+        // Pre-check if Google provider is enabled in Supabase without throwing user to raw 400 error page
+        try {
+          const testRes = await fetch(data.url, { method: 'GET' });
+          if (!testRes.ok) {
+            const errJson = await testRes.json().catch(() => null);
+            if (errJson?.msg?.includes('provider is not enabled') || testRes.status === 400) {
+              setMessage({
+                type: 'error',
+                text: 'ספק ההתחברות האוטומטית של Google OAuth אינו מופעל עדיין בלוח הבקרה של Supabase (דרוש צימוד Google Client ID). באפשרותך להיכנס מידית וללא שום עיכוב באמצעות הזנת כתובת הגוגל והשם שלך בטופס למטה.',
+              });
+              if (!email) {
+                setEmail('shalomyosefzeev@gmail.com');
+              }
+              setShowSetupHelp(true);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        } catch {
+          // If network or CORS, proceed to redirect
+        }
+
+        // If enabled, navigate to Google sign-in
+        window.location.href = data.url;
+      }
     } catch (err: any) {
       console.error('Google Sign-in error:', err);
       setMessage({
         type: 'error',
-        text: 'שגיאה בחיבור עם גוגל. תוכל להתחבר מידית באמצעות הזנת האימייל למטה.',
+        text: 'ספק Google אינו מופעל עדיין. תוכל להיכנס מידית באמצעות הזנת כתובת האימייל והשם שלך למטה.',
       });
       setIsSubmitting(false);
     }
@@ -162,26 +192,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             <span>התחבר באמצעות חשבון Google</span>
           </button>
 
+          {/* Setup Help Explainer when Google OAuth isn't activated yet */}
+          {showSetupHelp && (
+            <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs text-amber-950 space-y-2 animate-in fade-in">
+              <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>כיצד להפעיל חיבור Google OAuth מלא:</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Google דורשת מפתח יישום (OAuth Client ID). להפעלתו, יש להיכנס ל-
+                <span className="font-mono font-bold mx-1">Supabase Dashboard &gt; Auth &gt; Providers &gt; Google</span>
+                ולהזין את מפתחות ה-Google Cloud.
+              </p>
+              <div className="p-2 bg-white/80 rounded-xl border border-amber-200/80 text-[11px] font-semibold text-emerald-800">
+                ✨ <b>כניסה מידית:</b> אינך חייב להגדיר זאת כעת! הזן את שמך וכתובת האימייל שלך למטה ותיכנס למערכת ברגע זה.
+              </div>
+            </div>
+          )}
+
           {/* Divider */}
           <div className="relative flex items-center justify-center">
             <div className="border-t border-slate-200 w-full" />
             <span className="bg-white px-3 text-xs font-semibold text-slate-400 absolute">
-              או כניסה מהירה עם אימייל
+              כניסה מהירה עם אימייל ושם
             </span>
+          </div>
+
+          {/* Quick Preset Chip */}
+          <div className="flex items-center gap-2 pt-0.5">
+            <span className="text-[11px] text-slate-500 font-medium">זיהוי מהיר בלחיצה:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('shalomyosefzeev@gmail.com');
+                if (!name) setName('שלום');
+              }}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition active:scale-95 cursor-pointer"
+            >
+              shalomyosefzeev@gmail.com
+            </button>
           </div>
 
           {/* Email / Direct Sign-In Form */}
           <form onSubmit={handleEmailSignIn} className="space-y-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שמך המלא (אופציונלי)
+                שמך המלא (למשל: שמך הפרטי ומשפחה)
               </label>
               <input
                 type="text"
-                placeholder="למשל: שלום ישראלי"
+                placeholder="למשל: שלום קלוגר"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-slate-50/50"
+                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-slate-50/50 font-medium"
               />
             </div>
 
