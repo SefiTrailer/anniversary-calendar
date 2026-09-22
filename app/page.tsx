@@ -8,6 +8,8 @@ import { BranchManagerModal } from '@/components/BranchManagerModal';
 import { GoogleSyncModal } from '@/components/GoogleSyncModal';
 import { NewCalendarModal } from '@/components/NewCalendarModal';
 import { AuthModal } from '@/components/AuthModal';
+import { ShareCalendarModal } from '@/components/ShareCalendarModal';
+import { DeleteCalendarConfirmModal } from '@/components/DeleteCalendarConfirmModal';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
 import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
@@ -23,11 +25,12 @@ import {
   Plus,
   ArrowLeft,
   ArrowRight,
+  Trash2,
   LayoutGrid,
-  FolderHeart,
-  BookOpen,
   LogIn,
   CheckCircle2,
+  ExternalLink,
+  MessageCircle,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -45,15 +48,48 @@ export default function HomePage() {
   const [deceased, setDeceased] = useState<DeceasedPerson[]>([]);
   const [membership, setMembership] = useState<UserMembership | null>(null);
 
+  // Shared View State (When opened via ?share=true&calendarId=...&branches=...)
+  const [sharedViewData, setSharedViewData] = useState<{
+    calendar: CalendarProject;
+    branches: FamilyBranch[];
+    deceased: DeceasedPerson[];
+    feedToken: string;
+    selectedBranchIds: string[];
+  } | null>(null);
+
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isBranchesModalOpen, setIsBranchesModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [calendarToDelete, setCalendarToDelete] = useState<CalendarProject | null>(null);
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
 
   const [loading, setLoading] = useState(true);
+
+  // Check for shared link in URL upon mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const isShare = sp.get('share') === 'true' || sp.get('isShare') === 'true';
+      const calId = sp.get('calendarId');
+      const brParam = sp.get('branches') || '';
+
+      if (isShare && calId) {
+        fetch(`/api/data?isShare=true&calendarId=${calId}&branches=${brParam}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.calendar) {
+              setSharedViewData(data);
+            }
+          })
+          .catch((err) => console.error('Failed to load shared calendar:', err));
+      }
+    }
+  }, []);
 
   // Initialize User from active Supabase / Google OAuth session or localStorage
   useEffect(() => {
@@ -245,6 +281,29 @@ export default function HomePage() {
     loadUserCalendars();
   };
 
+  // Delete an entire calendar
+  const handleConfirmDeleteCalendar = async (calendarId: string) => {
+    if (!currentUser) return;
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_calendar',
+        payload: { calendarId },
+        userEmail: currentUser.email,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'שגיאה במחיקת היומן');
+    }
+
+    if (currentCalendar?.id === calendarId) {
+      setCurrentCalendar(null);
+    }
+    await loadUserCalendars();
+  };
+
   // Add or update deceased with conflict check
   const handleSaveDeceased = async (
     deceasedData: Partial<DeceasedPerson>,
@@ -375,16 +434,19 @@ export default function HomePage() {
     setIsAuthModalOpen(false);
   };
 
-  // Find upcoming yahrzeits in the next 30 days for active calendar
+  // Find upcoming yahrzeits in the next 30 days for active calendar or shared view
+  const targetDeceased = sharedViewData ? sharedViewData.deceased : deceased;
+  const isViewingSomething = Boolean(currentCalendar || sharedViewData);
+
   const upcomingThisMonth = useMemo(() => {
-    if (!currentCalendar || deceased.length === 0) return [];
+    if (!isViewingSomething || targetDeceased.length === 0) return [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const next30 = new Date(today);
     next30.setDate(next30.getDate() + 30);
 
-    return deceased
+    return targetDeceased
       .map((d) => {
         const up = calculateUpcomingYahrzeits(d, 1)[0];
         if (!up) return null;
@@ -397,7 +459,7 @@ export default function HomePage() {
         return item !== null && item.diffDays >= 0 && item.diffDays <= 30;
       })
       .sort((a, b) => a.diffDays - b.diffDays);
-  }, [deceased, currentCalendar]);
+  }, [targetDeceased, isViewingSomething]);
 
   const isAdmin = Boolean(currentUser && membership?.role === 'admin');
 
@@ -416,6 +478,13 @@ export default function HomePage() {
           setIsAddModalOpen(true);
         }}
         onOpenSync={() => setIsSyncModalOpen(true)}
+        onOpenShare={() => setIsShareModalOpen(true)}
+        onDeleteCurrentCalendar={() => {
+          if (currentCalendar) {
+            setCalendarToDelete(currentCalendar);
+            setIsDeleteModalOpen(true);
+          }
+        }}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onSignOut={handleSignOut}
         currentUser={currentUser}
@@ -427,9 +496,151 @@ export default function HomePage() {
       {/* Main Page Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
         {/* ========================================================================= */}
+        {/* VIEW 0: SHARED VIEW MODE (WHEN VISITING VIA SELECTIVE SHARE LINK)        */}
+        {/* ========================================================================= */}
+        {sharedViewData && (
+          <div className="space-y-8">
+            {/* Shared View Notice Bar */}
+            <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-indigo-950 font-bold">
+                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>
+                  תצוגת יומן משותפת: מוצגים אך ורק ענפי המשפחה שנבחרו עבורך ({sharedViewData.branches.map((b) => b.name).join(' • ')})
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setSharedViewData(null);
+                  window.history.replaceState({}, '', '/');
+                }}
+                className="text-indigo-700 hover:text-indigo-900 font-bold hover:underline cursor-pointer"
+              >
+                חזרה לדף הראשי &larr;
+              </button>
+            </div>
+
+            {/* Shared Calendar Hero */}
+            <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-9 text-white shadow-xl relative overflow-hidden border border-slate-800">
+              <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                <div className="space-y-3 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
+                    <Flame className="w-3.5 h-3.5 text-amber-400" />
+                    <span>היום: {todayHebrewDate}</span>
+                  </div>
+
+                  <h2 className="text-2xl sm:text-4xl font-black font-serif text-slate-50">
+                    {sharedViewData.calendar.name}
+                  </h2>
+
+                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
+                    יומן ימי פטירה (יארצייט) מסונכרן. ענפים משותפים: {sharedViewData.branches.map((b) => b.name).join(', ')}.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
+                  <div className="flex-1 sm:flex-initial bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
+                    <span className="text-2xl font-black text-white block">{sharedViewData.deceased.length}</span>
+                    <span className="text-[11px] text-slate-300 font-bold">נפטרים בענף</span>
+                  </div>
+
+                  <a
+                    href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
+                      `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
+                        typeof window !== 'undefined' ? window.location.host : 'yahrzeit-calendar.vercel.app'
+                      }/api/calendar/${sharedViewData.feedToken}?branches=${sharedViewData.selectedBranchIds.join(',')}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-blue-600/30 cursor-pointer"
+                  >
+                    <CalendarIcon className="w-4 h-4" />
+                    <span>סנכרן ענף זה ל-Google Calendar</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Upcoming Yahrzeits for Shared Branches */}
+            {upcomingThisMonth.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
+                    <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
+                    <span className="font-serif font-black text-lg">
+                      אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
+                    זכרון להולכים
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => (
+                    <div
+                      key={person.id}
+                      className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-lg font-black text-slate-900 block leading-tight font-serif">
+                            {person.first_name} {person.last_name} ז״ל
+                          </span>
+                          {person.father_or_mother_name && (
+                            <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
+                              לעילוי נשמת {person.father_or_mother_name}
+                            </span>
+                          )}
+                          <span className="text-sm font-bold text-amber-900 block mt-1.5 font-serif">
+                            {upcoming.hebrewDateStr} &bull;{' '}
+                            {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'numeric',
+                            })}
+                          </span>
+                        </div>
+
+                        <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                          {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500 font-serif">
+                          {formatAnniversaryYearText(upcoming.yearsPassed)}
+                        </span>
+                        <a
+                          href={getGoogleCalendarDirectAddUrl(person, upcoming)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                        >
+                          <CalendarIcon className="w-3 h-3 text-blue-600" />
+                          <span>הוסף ליומן</span>
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Read-Only Deceased List */}
+            <DeceasedList
+              deceased={sharedViewData.deceased}
+              branches={sharedViewData.branches}
+              isAdmin={false}
+              onEdit={() => {}}
+              onDelete={async () => {}}
+            />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
         {/* VIEW 1: UNAUTHENTICATED GUEST LANDING PAGE (NO DATA LEAKAGE)             */}
         {/* ========================================================================= */}
-        {!currentUser && (
+        {!currentUser && !sharedViewData && (
           <div className="space-y-12">
             {/* Hero Section */}
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-8 sm:p-14 text-white shadow-2xl relative overflow-hidden border border-slate-800 text-center">
@@ -514,9 +725,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
                   <Users className="w-6 h-6" />
                 </div>
-                <h3 className="font-serif font-black text-lg text-slate-900">חלוקה לענפי משפחה</h3>
+                <h3 className="font-serif font-black text-lg text-slate-900">חלוקה לענפי משפחה ושיתוף חלקי</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  התאמה אישית של היומן לפי ענפי המשפחה (צד אבא, צד אמא, משפחות שונות), עם סינונים ייעודיים לכל בן משפחה.
+                  חלוקת הנפטרים לפי ענפי המשפחה, ואפשרות לשתף רק חצי מהיומן (ענף מסוים בלבד) עם בני הדודים.
                 </p>
               </div>
 
@@ -526,7 +737,7 @@ export default function HomePage() {
                 </div>
                 <h3 className="font-serif font-black text-lg text-slate-900">פרטיות והפרדה מלאה</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  כל משתמש יוצר ומנהל יומנים משפחתיים אישיים. המידע אינו חשוף לאורחים או למשתמשים אחרים ללא הרשאה.
+                  כל משתמש מנהל יומנים נפרדים. אפשרות למחוק יומן שלם בכל עת ושליטה מלאה על הרשאות הגישה.
                 </p>
               </div>
             </div>
@@ -536,7 +747,7 @@ export default function HomePage() {
         {/* ========================================================================= */}
         {/* VIEW 2: LOGGED IN BUT NO CALENDARS CREATED YET (ONBOARDING)               */}
         {/* ========================================================================= */}
-        {currentUser && calendars.length === 0 && !loading && (
+        {currentUser && !sharedViewData && calendars.length === 0 && !loading && (
           <div className="max-w-2xl mx-auto space-y-6 text-center py-10">
             <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
               <Flame className="w-10 h-10 animate-pulse" />
@@ -553,7 +764,7 @@ export default function HomePage() {
               </h2>
 
               <p className="text-slate-600 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto">
-                ביומן תוכל להוסיף את יקיריך, לחלק לענפי משפחה (צד אבא, צד אמא ועוד), ולקבל תזכורות אוטומטיות ליומן Google שלך בכל שנה לפי התאריך העברי.
+                ביומן תוכל להוסיף את יקיריך, לחלק לענפי משפחה (צד אבא, צד אמא ועוד), לשתף חלקי יומן עם בני משפחה, ולקבל תזכורות אוטומטיות ליומן Google.
               </p>
             </div>
 
@@ -572,7 +783,7 @@ export default function HomePage() {
         {/* ========================================================================= */}
         {/* VIEW 3: LOGGED IN & AT CALENDARS HUB ("כל היומנים שלי")                   */}
         {/* ========================================================================= */}
-        {currentUser && !currentCalendar && calendars.length > 0 && (
+        {currentUser && !sharedViewData && !currentCalendar && calendars.length > 0 && (
           <div className="space-y-6">
             {/* Hub Banner */}
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -585,7 +796,7 @@ export default function HomePage() {
                   מרכז היומנים המשפחתיים שלי
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-300 font-medium">
-                  שלום {currentUser.name}, בחר יומן משפחתי לצפייה ולניהול, או פתח יומן חדש:
+                  שלום {currentUser.name}, בחר יומן משפחתי לצפייה ולניהול, שתף ענפים ספציפיים או פתח יומן חדש:
                 </p>
               </div>
 
@@ -605,22 +816,39 @@ export default function HomePage() {
                 return (
                   <div
                     key={cal.id}
-                    className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between space-y-4 group"
+                    className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition flex flex-col justify-between space-y-4 group relative"
                   >
                     <div className="space-y-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
                           <Flame className="w-5 h-5" />
                         </div>
-                        <span
-                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                            isOwner
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {isOwner ? 'מנהל ראשי' : 'חבר משפחה'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                              isOwner
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {isOwner ? 'מנהל ראשי' : 'חבר משפחה'}
+                          </span>
+
+                          {/* Delete Calendar Button (Owner Only) */}
+                          {isOwner && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCalendarToDelete(cal);
+                                setIsDeleteModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer"
+                              title="מחק יומן זה לצמיתות"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <h3 className="font-serif font-black text-xl text-slate-900 group-hover:text-blue-700 transition">
@@ -638,13 +866,26 @@ export default function HomePage() {
                         <span>{cal.branches_count ?? 0} ענפי משפחה</span>
                       </div>
 
-                      <button
-                        onClick={() => handleSelectCalendar(cal)}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition cursor-pointer"
-                      >
-                        <span>פתח יומן</span>
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleSelectCalendar(cal)}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition cursor-pointer"
+                        >
+                          <span>פתח יומן</span>
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            await handleSelectCalendar(cal);
+                            setIsShareModalOpen(true);
+                          }}
+                          className="px-3 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                          title="שתף יומן זה לפי ענפים"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -674,10 +915,10 @@ export default function HomePage() {
         {/* ========================================================================= */}
         {/* VIEW 4: ACTIVE SPECIFIC CALENDAR VIEW                                    */}
         {/* ========================================================================= */}
-        {currentUser && currentCalendar && (
+        {currentUser && !sharedViewData && currentCalendar && (
           <div className="space-y-8">
-            {/* Back to Hub Breadcrumb Bar */}
-            <div className="flex items-center justify-between gap-4">
+            {/* Top Navigation & Calendar Actions Bar */}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <button
                 onClick={handleBackToHub}
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/80 shadow-xs transition cursor-pointer"
@@ -686,9 +927,31 @@ export default function HomePage() {
                 <span>חזרה לכל היומנים שלי</span>
               </button>
 
-              <span className="text-xs font-bold text-slate-400 hidden sm:inline font-serif">
-                {currentCalendar.name}
-              </span>
+              <div className="flex items-center gap-2">
+                {/* Share Calendar Button */}
+                <button
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>שתף יומן (לפי ענפים)</span>
+                </button>
+
+                {/* Delete Calendar Button (Admin Only) */}
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setCalendarToDelete(currentCalendar);
+                      setIsDeleteModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-2 rounded-xl transition cursor-pointer"
+                    title="מחק יומן זה לצמיתות"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">מחק יומן</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Dignified Calendar Hero Section */}
@@ -727,11 +990,11 @@ export default function HomePage() {
                   </div>
 
                   <button
-                    onClick={() => setIsSyncModalOpen(true)}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-blue-600/30 active:scale-95 cursor-pointer"
+                    onClick={() => setIsShareModalOpen(true)}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
                   >
                     <Share2 className="w-4 h-4" />
-                    <span>סנכרן ליומן שלי</span>
+                    <span>שתף יומן זה</span>
                   </button>
                 </div>
               </div>
@@ -865,8 +1128,28 @@ export default function HomePage() {
             calendarName={currentCalendar.name}
             onUpdateBranches={handleUpdateMembershipBranches}
           />
+
+          <ShareCalendarModal
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            calendar={currentCalendar}
+            branches={branches}
+            deceased={deceased}
+            feedToken={membership?.feed_token}
+          />
         </>
       )}
+
+      {/* Global Delete Calendar Modal */}
+      <DeleteCalendarConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setCalendarToDelete(null);
+        }}
+        calendar={calendarToDelete}
+        onConfirmDelete={handleConfirmDeleteCalendar}
+      />
 
       <NewCalendarModal
         isOpen={isNewCalendarModalOpen}

@@ -18,10 +18,15 @@ export async function GET(
   const allBranches = await DataStore.getBranches(calendar.id);
   const branchMap = new Map(allBranches.map(b => [b.id, b.name]));
 
-  // Get deceased records matching user's selected branches
+  // Get deceased records matching user's selected branches or query branches
   const allDeceased = await DataStore.getDeceased(calendar.id);
+  const queryBranches = request.nextUrl.searchParams.get('branches');
+  const targetBranchIds = queryBranches
+    ? queryBranches.split(',').map(s => s.trim()).filter(Boolean)
+    : membership.selected_branch_ids;
+
   const filteredDeceased = allDeceased.filter(d =>
-    membership.selected_branch_ids.includes(d.branch_id)
+    targetBranchIds.includes(d.branch_id)
   );
 
   // Initialize iCalendar

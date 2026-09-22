@@ -233,6 +233,27 @@ export const DataStore = {
     return calendar;
   },
 
+  async deleteCalendar(calendarId: string) {
+    try {
+      // 1. Delete all deceased in calendar
+      await supabase.from('deceased').delete().eq('calendar_id', calendarId);
+      // 2. Delete all branches in calendar
+      await supabase.from('branches').delete().eq('calendar_id', calendarId);
+      // 3. Delete all memberships in calendar
+      await supabase.from('calendar_members').delete().eq('calendar_id', calendarId);
+      // 4. Delete the calendar itself
+      await supabase.from('calendars').delete().eq('id', calendarId);
+    } catch (err) {
+      console.error('Supabase deleteCalendar error:', err);
+    }
+
+    const cache = getCache();
+    cache.calendars = cache.calendars.filter(c => c.id !== calendarId);
+    cache.branches = cache.branches.filter(b => b.calendar_id !== calendarId);
+    cache.deceased = cache.deceased.filter(d => d.calendar_id !== calendarId);
+    cache.memberships = cache.memberships.filter(m => m.calendar_id !== calendarId);
+  },
+
   async getBranches(calendarId: string): Promise<FamilyBranch[]> {
     try {
       const { data } = await supabase.from('branches').select('*').eq('calendar_id', calendarId);

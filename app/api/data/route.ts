@@ -9,6 +9,38 @@ export async function GET(request: NextRequest) {
   const userEmail = searchParams.get('userEmail');
   const userName = searchParams.get('userName') || 'אורח';
 
+  const isShare = searchParams.get('isShare') === 'true' || searchParams.get('shared') === 'true';
+
+  // If this is a shared calendar view link (e.g. sent via WhatsApp / Web link)
+  if (isShare && calendarId) {
+    const calendar = await DataStore.getCalendar(calendarId);
+    if (!calendar) {
+      return NextResponse.json({ error: 'היומן המבוקש לא נמצא' }, { status: 404 });
+    }
+
+    const allBranches = await DataStore.getBranches(calendarId);
+    const branchesParam = searchParams.get('branches');
+    const branchIds = branchesParam
+      ? branchesParam.split(',').map(s => s.trim()).filter(Boolean)
+      : allBranches.map(b => b.id);
+
+    const filteredBranches = allBranches.filter(b => branchIds.includes(b.id));
+    const allDeceased = await DataStore.getDeceased(calendarId);
+    const filteredDeceased = allDeceased.filter(d => branchIds.includes(d.branch_id));
+
+    // Get owner membership for sync feed token
+    const ownerMembership = await DataStore.getUserMembership(calendarId, calendar.created_by_user_id);
+
+    return NextResponse.json({
+      calendar,
+      branches: filteredBranches,
+      deceased: filteredDeceased,
+      isSharedView: true,
+      selectedBranchIds: branchIds,
+      feedToken: ownerMembership?.feed_token || 'shared',
+    });
+  }
+
   // If unauthenticated guest, return empty calendars list
   if (!userEmail || userEmail === 'guest@example.com') {
     return NextResponse.json({ calendars: [] });
@@ -195,6 +227,23 @@ export async function POST(request: NextRequest) {
           branch: defaultBranch,
           membership,
         });
+      }
+
+      case 'delete_calendar': {
+        const { calendarId } = payload;
+        const cal = await DataStore.getCalendar(calendarId);
+        if (!cal) {
+          return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
+        }
+        // Only creator/admin can delete calendar
+        if (cal.created_by_user_id !== userEmail) {
+          const membership = await DataStore.getUserMembership(calendarId, userEmail);
+          if (membership?.role !== 'admin') {
+            return NextResponse.json({ error: 'אין לך הרשאה למחוק יומן זה' }, { status: 403 });
+          }
+        }
+        await DataStore.deleteCalendar(calendarId);
+        return NextResponse.json({ success: true });
       }
 
       case 'save_membership': {

@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronDown,
   LayoutGrid,
+  Trash2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -25,6 +26,8 @@ interface HeaderProps {
   onOpenBranches: () => void;
   onOpenAddDeceased: () => void;
   onOpenSync: () => void;
+  onOpenShare?: () => void;
+  onDeleteCurrentCalendar?: () => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
   currentUser: { email: string; name: string; avatar?: string | null } | null;
@@ -42,6 +45,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBranches,
   onOpenAddDeceased,
   onOpenSync,
+  onOpenShare,
+  onDeleteCurrentCalendar,
   onOpenAuth,
   onSignOut,
   currentUser,
@@ -187,13 +192,23 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
+                    {/* Share Calendar (Branches/Whole) */}
+                    <button
+                      onClick={onOpenShare}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50/80 border border-indigo-200/80 rounded-xl hover:bg-indigo-100 transition shadow-xs cursor-pointer"
+                      title="שתף יומן זה לפי ענפי משפחה או בשלמותו"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>שתף יומן</span>
+                    </button>
+
                     {/* Google Sync Button */}
                     <button
                       onClick={onOpenSync}
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50/80 border border-blue-200/80 rounded-xl hover:bg-blue-100 transition shadow-xs cursor-pointer"
                     >
-                      <Share2 className="w-3.5 h-3.5 text-blue-600" />
-                      <span>סנכרון ליומן גוגל</span>
+                      <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                      <span>סנכרון אישי</span>
                     </button>
 
                     {/* Primary Action: Add Deceased */}
@@ -296,6 +311,19 @@ export const Header: React.FC<HeaderProps> = ({
                           >
                             <Share2 className="w-4 h-4 text-slate-400" />
                             <span>הגדרות סנכרון אישי</span>
+                          </button>
+                        )}
+
+                        {currentCalendar && isAdmin && (
+                          <button
+                            onClick={() => {
+                              setIsUserMenuOpen(false);
+                              if (onDeleteCurrentCalendar) onDeleteCurrentCalendar();
+                            }}
+                            className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-500" />
+                            <span>מחק יומן זה לצמיתות</span>
                           </button>
                         )}
 
