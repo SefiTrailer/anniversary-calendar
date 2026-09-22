@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from './types';
+import crypto from 'crypto';
 
 // Fallback in-memory/file cache for development/offline
 let memoryCache: {
@@ -388,5 +389,84 @@ export const DataStore = {
       cache.memberships.push(membership);
     }
     return membership;
+  },
+
+  async bulkImport(
+    calendarId: string,
+    rawBranches: Array<{ name: string; color?: string }>,
+    rawDeceased: Array<{
+      first_name: string;
+      last_name: string;
+      father_or_mother_name?: string;
+      branch_name?: string;
+      hebrew_day: number;
+      hebrew_month: string;
+      hebrew_year?: number;
+      gregorian_original_date?: string;
+      after_sunset?: boolean;
+      leap_year_preference?: 'Adar I' | 'Adar II';
+      notes?: string;
+    }>
+  ): Promise<{ addedBranches: number; addedDeceased: number }> {
+    const existingBranches = await this.getBranches(calendarId);
+    const branchMap = new Map<string, string>();
+    for (const b of existingBranches) {
+      branchMap.set(b.name.trim().toLowerCase(), b.id);
+    }
+
+    let addedBranchesCount = 0;
+    const colors = ['#2563eb', '#10b981', '#d97706', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'];
+
+    // Ensure all branches from import exist
+    for (const rb of rawBranches || []) {
+      if (!rb.name) continue;
+      const cleanName = rb.name.trim();
+      const key = cleanName.toLowerCase();
+      if (!branchMap.has(key)) {
+        const color = rb.color || colors[(existingBranches.length + addedBranchesCount) % colors.length];
+        const newBranch: FamilyBranch = {
+          id: crypto.randomUUID(),
+          calendar_id: calendarId,
+          name: cleanName,
+          color,
+          created_at: new Date().toISOString(),
+        };
+        await this.addBranch(newBranch);
+        branchMap.set(key, newBranch.id);
+        addedBranchesCount++;
+      }
+    }
+
+    const currentBranches = await this.getBranches(calendarId);
+    const defaultBranchId = currentBranches[0]?.id || crypto.randomUUID();
+
+    let addedDeceasedCount = 0;
+    for (const rd of rawDeceased || []) {
+      if (!rd.first_name || !rd.last_name || !rd.hebrew_day || !rd.hebrew_month) continue;
+      const branchKey = (rd.branch_name || '').trim().toLowerCase();
+      const branchId = branchMap.get(branchKey) || defaultBranchId;
+
+      const newDeceased: DeceasedPerson = {
+        id: crypto.randomUUID(),
+        calendar_id: calendarId,
+        branch_id: branchId,
+        first_name: rd.first_name.trim(),
+        last_name: rd.last_name.trim(),
+        father_or_mother_name: rd.father_or_mother_name?.trim() || '',
+        hebrew_day: Number(rd.hebrew_day),
+        hebrew_month: rd.hebrew_month,
+        hebrew_year: Number(rd.hebrew_year) || 5700,
+        gregorian_original_date: rd.gregorian_original_date || '',
+        after_sunset: Boolean(rd.after_sunset),
+        leap_year_preference: (rd.leap_year_preference as any) || 'Adar II',
+        notes: rd.notes || '',
+        created_at: new Date().toISOString(),
+      };
+
+      await this.addDeceased(newDeceased);
+      addedDeceasedCount++;
+    }
+
+    return { addedBranches: addedBranchesCount, addedDeceased: addedDeceasedCount };
   },
 };

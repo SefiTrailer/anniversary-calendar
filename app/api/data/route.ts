@@ -255,6 +255,32 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, membership: saved });
       }
 
+      case 'bulk_import': {
+        const { calendarId, branches, deceased } = payload;
+        const cal = await DataStore.getCalendar(calendarId);
+        if (!cal) {
+          return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
+        }
+        if (cal.created_by_user_id !== userEmail) {
+          const membership = await DataStore.getUserMembership(calendarId, userEmail);
+          if (membership?.role !== 'admin') {
+            return NextResponse.json({ error: 'אין לך הרשאה לייבא נתונים ליומן זה' }, { status: 403 });
+          }
+        }
+
+        const result = await DataStore.bulkImport(calendarId, branches || [], deceased || []);
+        const updatedBranches = await DataStore.getBranches(calendarId);
+        const updatedDeceased = await DataStore.getDeceased(calendarId);
+
+        return NextResponse.json({
+          success: true,
+          addedBranches: result.addedBranches,
+          addedDeceased: result.addedDeceased,
+          branches: updatedBranches,
+          deceased: updatedDeceased,
+        });
+      }
+
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     }

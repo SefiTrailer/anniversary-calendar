@@ -15,6 +15,7 @@ import {
   ChevronDown,
   LayoutGrid,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -25,6 +26,7 @@ interface HeaderProps {
   onOpenNewCalendar: () => void;
   onOpenBranches: () => void;
   onOpenAddDeceased: () => void;
+  onOpenGemImport?: () => void;
   onOpenSync: () => void;
   onOpenShare?: () => void;
   onDeleteCurrentCalendar?: () => void;
@@ -44,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewCalendar,
   onOpenBranches,
   onOpenAddDeceased,
+  onOpenGemImport,
   onOpenSync,
   onOpenShare,
   onDeleteCurrentCalendar,
@@ -211,6 +214,18 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>סנכרון אישי</span>
                     </button>
 
+                    {/* Smart GEM / JSON Import (Admin Only) */}
+                    {isAdmin && onOpenGemImport && (
+                      <button
+                        onClick={onOpenGemImport}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 rounded-xl transition shadow-xs cursor-pointer"
+                        title="ייבוא חכם מרוכז מ-GEM או מ-JSON"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <span>ייבוא חכם (GEM)</span>
+                      </button>
+                    )}
+
                     {/* Primary Action: Add Deceased */}
                     <button
                       onClick={onOpenAddDeceased}
@@ -311,6 +326,19 @@ export const Header: React.FC<HeaderProps> = ({
                           >
                             <Share2 className="w-4 h-4 text-slate-400" />
                             <span>הגדרות סנכרון אישי</span>
+                          </button>
+                        )}
+
+                        {currentCalendar && isAdmin && onOpenGemImport && (
+                          <button
+                            onClick={() => {
+                              setIsUserMenuOpen(false);
+                              onOpenGemImport();
+                            }}
+                            className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-50 rounded-xl transition cursor-pointer"
+                          >
+                            <Sparkles className="w-4 h-4 text-amber-500" />
+                            <span>ייבוא חכם (GEM / JSON)</span>
                           </button>
                         )}
 

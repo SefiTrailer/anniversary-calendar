@@ -10,6 +10,7 @@ import { NewCalendarModal } from '@/components/NewCalendarModal';
 import { AuthModal } from '@/components/AuthModal';
 import { ShareCalendarModal } from '@/components/ShareCalendarModal';
 import { DeleteCalendarConfirmModal } from '@/components/DeleteCalendarConfirmModal';
+import { GemImportModal } from '@/components/GemImportModal';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
 import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
@@ -67,6 +68,7 @@ export default function HomePage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [calendarToDelete, setCalendarToDelete] = useState<CalendarProject | null>(null);
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
+  const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -477,6 +479,7 @@ export default function HomePage() {
           setEditingDeceased(null);
           setIsAddModalOpen(true);
         }}
+        onOpenGemImport={() => setIsGemImportModalOpen(true)}
         onOpenSync={() => setIsSyncModalOpen(true)}
         onOpenShare={() => setIsShareModalOpen(true)}
         onDeleteCurrentCalendar={() => {
@@ -928,6 +931,18 @@ export default function HomePage() {
               </button>
 
               <div className="flex items-center gap-2">
+                {/* Smart GEM Import Button (Admin Only) */}
+                {isAdmin && (
+                  <button
+                    onClick={() => setIsGemImportModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                    title="ייבוא חכם של נפטרים וענפים מ-GEM או מ-JSON"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <span>ייבוא חכם (GEM)</span>
+                  </button>
+                )}
+
                 {/* Share Calendar Button */}
                 <button
                   onClick={() => setIsShareModalOpen(true)}
@@ -1136,6 +1151,17 @@ export default function HomePage() {
             branches={branches}
             deceased={deceased}
             feedToken={membership?.feed_token}
+          />
+
+          <GemImportModal
+            isOpen={isGemImportModalOpen}
+            onClose={() => setIsGemImportModalOpen(false)}
+            calendarId={currentCalendar.id}
+            userEmail={currentUser?.email || ''}
+            onImportSuccess={(newBranches, newDeceased) => {
+              setBranches(newBranches);
+              setDeceased(newDeceased);
+            }}
           />
         </>
       )}
