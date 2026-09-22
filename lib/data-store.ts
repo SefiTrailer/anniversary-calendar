@@ -13,10 +13,10 @@ const INITIAL_DATA = {
   calendars: [
     {
       id: '11111111-1111-1111-1111-111111111111',
-      name: 'יומן משפחת ישראלי המורחבת',
+      name: 'יומן משפחת רייכקינד המורחבת',
       description: 'לוח ימי פטירה (יארצייט) המשפחתי לכל ענפי המשפחה',
-      created_by_user_id: 'user-sefi',
-      created_by_user_name: 'ספי ישראלי',
+      created_by_user_id: 'shalomyosefzeev@gmail.com',
+      created_by_user_name: 'ספי רייכקינד',
       created_at: new Date().toISOString(),
     },
   ],

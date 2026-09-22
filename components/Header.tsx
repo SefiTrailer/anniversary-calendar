@@ -136,8 +136,14 @@ export const Header: React.FC<HeaderProps> = ({
                 ))}
               </select>
               <button
-                onClick={onOpenNewCalendar}
-                className="p-1 text-slate-500 hover:text-blue-600 hover:bg-white rounded-lg transition shadow-xs"
+                onClick={() => {
+                  if (!currentUser) {
+                    onOpenAuth();
+                  } else {
+                    onOpenNewCalendar();
+                  }
+                }}
+                className="p-1 text-slate-500 hover:text-blue-600 hover:bg-white rounded-lg transition shadow-xs cursor-pointer"
                 title="צור פרויקט יומן משפחתי חדש"
               >
                 <Plus className="w-4 h-4" />
@@ -166,8 +172,14 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Primary Action: Add Deceased */}
             <button
-              onClick={onOpenAddDeceased}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95"
+              onClick={() => {
+                if (!currentUser) {
+                  onOpenAuth();
+                } else {
+                  onOpenAddDeceased();
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>הוסף נפטר</span>

@@ -100,15 +100,9 @@ export default function HomePage() {
         }
       } catch {}
 
-      // 3. Default verified owner session for immediate frictionless experience
-      const defaultOwner = {
-        email: 'shalomyosefzeev@gmail.com',
-        name: 'ספי רייכקינד',
-        avatar: 'https://lh3.googleusercontent.com/a/ACg8ocLlT2SSbn2pbTojfDgn91p_5omwts52h6mrf5LPk8TuPp7lC1lu=s96-c',
-      };
+      // If no stored session, user is an unauthenticated guest
       if (isMounted) {
-        setCurrentUser(defaultOwner);
-        localStorage.setItem('ner_neshama_user', JSON.stringify(defaultOwner));
+        setCurrentUser(null);
       }
     };
 
@@ -346,7 +340,7 @@ export default function HomePage() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [deceased]);
 
-  const isAdmin = membership?.role === 'admin';
+  const isAdmin = Boolean(currentUser && membership?.role === 'admin');
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900">
