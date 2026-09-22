@@ -1,17 +1,33 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from '@/components/Header';
 import { DeceasedList } from '@/components/DeceasedList';
 import { DeceasedModal } from '@/components/DeceasedModal';
 import { BranchManagerModal } from '@/components/BranchManagerModal';
 import { GoogleSyncModal } from '@/components/GoogleSyncModal';
 import { NewCalendarModal } from '@/components/NewCalendarModal';
+import { AuthModal } from '@/components/AuthModal';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
-import { calculateUpcomingYahrzeits } from '@/lib/hebrew-calendar';
-import { Flame, Calendar as CalendarIcon, Users, BellRing, Sparkles, Share2 } from 'lucide-react';
+import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
+import { HDate } from '@hebcal/core';
+import {
+  Flame,
+  Calendar as CalendarIcon,
+  Users,
+  BellRing,
+  Share2,
+  Sparkles,
+  ShieldCheck,
+  Clock,
+  Plus,
+} from 'lucide-react';
 
 export default function HomePage() {
+  // Current User State
+  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+
+  // App Data State
   const [calendars, setCalendars] = useState<CalendarProject[]>([]);
   const [currentCalendar, setCurrentCalendar] = useState<CalendarProject | null>(null);
   const [branches, setBranches] = useState<FamilyBranch[]>([]);
@@ -23,17 +39,47 @@ export default function HomePage() {
   const [isBranchesModalOpen, setIsBranchesModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
 
   const [loading, setLoading] = useState(true);
 
-  const [currentUser, setCurrentUser] = useState({
-    email: 'shalomyosefzeev@gmail.com',
-    name: 'שלום יוסף זאב',
-  });
+  // Initialize User from storage or default
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('ner_neshama_user');
+      if (stored) {
+        setCurrentUser(JSON.parse(stored));
+      } else {
+        // Default authenticated session for the owner
+        const defaultUser = {
+          email: 'shalomyosefzeev@gmail.com',
+          name: 'שלום יוסף זאב',
+        };
+        setCurrentUser(defaultUser);
+        localStorage.setItem('ner_neshama_user', JSON.stringify(defaultUser));
+      }
+    } catch {
+      setCurrentUser({
+        email: 'shalomyosefzeev@gmail.com',
+        name: 'שלום יוסף זאב',
+      });
+    }
+  }, []);
 
-  // Load data from API with user isolation
+  // Today's Hebrew date string
+  const todayHebrewDate = useMemo(() => {
+    try {
+      const hd = new HDate();
+      return hd.render('he');
+    } catch {
+      return '';
+    }
+  }, []);
+
+  // Load data for current user
   const loadData = async (calendarId?: string) => {
+    if (!currentUser) return;
     try {
       const queryParams = new URLSearchParams({
         userEmail: currentUser.email,
@@ -67,8 +113,10 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentUser) {
+      loadData();
+    }
+  }, [currentUser]);
 
   const handleSelectCalendar = async (cal: CalendarProject) => {
     setCurrentCalendar(cal);
@@ -88,7 +136,11 @@ export default function HomePage() {
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload }),
+      body: JSON.stringify({
+        action,
+        payload,
+        userEmail: currentUser?.email,
+      }),
     });
 
     const data = await res.json();
@@ -100,7 +152,6 @@ export default function HomePage() {
       throw new Error(data.error || 'Failed to save');
     }
 
-    // Refresh calendar data
     if (currentCalendar) {
       await loadData(currentCalendar.id);
     }
@@ -110,7 +161,11 @@ export default function HomePage() {
     await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete_deceased', payload: { id } }),
+      body: JSON.stringify({
+        action: 'delete_deceased',
+        payload: { id },
+        userEmail: currentUser?.email,
+      }),
     });
     if (currentCalendar) {
       await loadData(currentCalendar.id);
@@ -125,6 +180,7 @@ export default function HomePage() {
       body: JSON.stringify({
         action: 'add_branch',
         payload: { calendar_id: currentCalendar.id, name, color },
+        userEmail: currentUser?.email,
       }),
     });
     await loadData(currentCalendar.id);
@@ -135,12 +191,17 @@ export default function HomePage() {
     await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete_branch', payload: { id } }),
+      body: JSON.stringify({
+        action: 'delete_branch',
+        payload: { id },
+        userEmail: currentUser?.email,
+      }),
     });
     await loadData(currentCalendar.id);
   };
 
   const handleCreateCalendar = async (name: string, description: string) => {
+    if (!currentUser) return;
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -171,32 +232,49 @@ export default function HomePage() {
       body: JSON.stringify({
         action: 'save_membership',
         payload: { membership: updated },
+        userEmail: currentUser?.email,
       }),
     });
   };
 
-  // Find upcoming yahrzeits in the next 30 days
-  const now = new Date();
-  const next30Days = new Date();
-  next30Days.setDate(next30Days.getDate() + 30);
+  const handleSignOut = () => {
+    localStorage.removeItem('ner_neshama_user');
+    setCurrentUser(null);
+    setIsAuthModalOpen(true);
+  };
 
-  const upcomingThisMonth = deceased
-    .map((d) => {
-      const up = calculateUpcomingYahrzeits(d, 1)[0];
-      return { deceased: d, upcoming: up };
-    })
-    .filter((item) => {
-      if (!item.upcoming) return false;
-      const d = new Date(item.upcoming.gregorianDate);
-      return d >= now && d <= next30Days;
-    })
-    .sort((a, b) => new Date(a.upcoming.gregorianDate).getTime() - new Date(b.upcoming.gregorianDate).getTime());
+  const handleAuthSuccess = (user: { email: string; name: string }) => {
+    setCurrentUser(user);
+    setIsAuthModalOpen(false);
+  };
+
+  // Find upcoming yahrzeits in the next 30 days
+  const upcomingThisMonth = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const next30 = new Date(today);
+    next30.setDate(next30.getDate() + 30);
+
+    return deceased
+      .map((d) => {
+        const up = calculateUpcomingYahrzeits(d, 1)[0];
+        if (!up) return null;
+        const eventDate = new Date(up.gregorianDate);
+        eventDate.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return { deceased: d, upcoming: up, diffDays };
+      })
+      .filter((item): item is { deceased: DeceasedPerson; upcoming: any; diffDays: number } => {
+        return item !== null && item.diffDays >= 0 && item.diffDays <= 30;
+      })
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [deceased]);
 
   const isAdmin = membership?.role === 'admin';
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Header Bar */}
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900">
+      {/* Top Header Bar */}
       <Header
         calendars={calendars}
         currentCalendar={currentCalendar}
@@ -208,89 +286,127 @@ export default function HomePage() {
           setIsAddModalOpen(true);
         }}
         onOpenSync={() => setIsSyncModalOpen(true)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onSignOut={handleSignOut}
+        currentUser={currentUser}
         membership={membership}
         isAdmin={isAdmin}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Welcome / Stats Banner */}
-        <div className="bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-          {/* Subtle Background Glow */}
-          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-          <div className="absolute bottom-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl translate-x-1/3 translate-y-1/3 pointer-events-none" />
+      {/* Main Page Body */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
+        {/* Dignified Hero Section */}
+        <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-9 text-white shadow-xl relative overflow-hidden border border-slate-800/80">
+          {/* Subtle Atmospheric Glows */}
+          <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-semibold backdrop-blur-sm border border-white/10">
-                <Flame className="w-3.5 h-3.5" />
-                <span>זכרון להולכים &bull; שיוך לענפי המשפחה</span>
+            <div className="space-y-3 max-w-2xl">
+              {/* Hebrew Date Pill */}
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs">
+                <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span>היום: {todayHebrewDate || 'לוח השנה העברי'}</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
+
+              <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
                 {currentCalendar?.name || 'טוען יומן משפחתי...'}
               </h2>
-              <p className="text-slate-300 text-sm leading-relaxed">
+
+              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
                 {currentCalendar?.description ||
-                  'ניהול ימי פטירה (יארצייט) לפי לוח השנה העברי, התחשבות בשקיעה ושנים מעוברות, וסנכרון אישי ליומן גוגל.'}
+                  'ניהול ימי פטירה (יארצייט) של אבות המשפחה לפי לוח השנה העברי, חלוקה לענפי משפחה וסנכרון אוטומטי ליומן גוגל.'}
               </p>
             </div>
 
-            {/* Quick Metrics */}
-            <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
-              <div className="flex-1 sm:flex-initial bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[100px]">
+            {/* Quick Metrics & Actions */}
+            <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
+              <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
                 <span className="text-2xl font-black text-white block">{deceased.length}</span>
-                <span className="text-[11px] text-slate-300 font-medium">נפטרים רשומים</span>
+                <span className="text-[11px] text-slate-300 font-bold">נפטרים ביומן</span>
               </div>
-              <div className="flex-1 sm:flex-initial bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[100px]">
+
+              <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
                 <span className="text-2xl font-black text-amber-400 block">{branches.length}</span>
-                <span className="text-[11px] text-slate-300 font-medium">ענפי משפחה</span>
+                <span className="text-[11px] text-slate-300 font-bold">ענפי משפחה</span>
               </div>
+
               <button
                 onClick={() => setIsSyncModalOpen(true)}
-                className="hidden sm:flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-500 transition rounded-2xl p-4 text-center min-w-[120px] shadow-lg shadow-blue-600/30 font-semibold text-xs"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-blue-600/30 active:scale-95 cursor-pointer"
               >
-                <Share2 className="w-5 h-5 mb-1" />
+                <Share2 className="w-4 h-4" />
                 <span>סנכרן ליומן שלי</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* Upcoming This Month Alert if any */}
+        {/* 30-Day Upcoming Yahrzeits Highlight Ribbon */}
         {upcomingThisMonth.length > 0 && (
-          <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-2 text-amber-900 font-bold text-sm mb-3">
-              <BellRing className="w-4 h-4 text-amber-600 animate-bounce" />
-              <span>ימי פטירה (יארצייט) ב-30 הימים הקרובים:</span>
+          <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
+                <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
+                <span>אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})</span>
+              </div>
+              <span className="text-xs font-bold text-amber-800 bg-amber-200/60 px-3 py-1 rounded-full">
+                זכרון להולכים
+              </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {upcomingThisMonth.map(({ deceased: person, upcoming }) => (
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => (
                 <div
                   key={person.id}
-                  className="bg-white p-3 rounded-xl border border-amber-200/60 shadow-xs flex items-center justify-between"
+                  className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition"
                 >
-                  <div>
-                    <span className="text-sm font-bold text-slate-900">
-                      {person.first_name} {person.last_name} ז״ל
-                    </span>
-                    <span className="text-xs text-slate-500 block">
-                      {upcoming.hebrewDateStr} &bull;{' '}
-                      {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                        day: 'numeric',
-                        month: 'numeric',
-                      })}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-base font-black text-slate-900 block leading-tight">
+                        {person.first_name} {person.last_name} ז״ל
+                      </span>
+                      {person.father_or_mother_name && (
+                        <span className="text-[11px] text-slate-500 font-semibold block mt-0.5">
+                          {person.father_or_mother_name}
+                        </span>
+                      )}
+                      <span className="text-xs font-bold text-amber-900 block mt-1.5">
+                        {upcoming.hebrewDateStr} &bull;{' '}
+                        {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                          weekday: 'short',
+                          day: 'numeric',
+                          month: 'numeric',
+                        })}
+                      </span>
+                    </div>
+
+                    <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                      {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
                     </span>
                   </div>
-                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800">
-                    שנת ה-{upcoming.yearsPassed}
-                  </span>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {formatAnniversaryYearText(upcoming.yearsPassed)}
+                    </span>
+                    <a
+                      href={getGoogleCalendarDirectAddUrl(person, upcoming)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                    >
+                      <CalendarIcon className="w-3 h-3 text-blue-600" />
+                      <span>הוסף ליומן</span>
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Deceased List Grid */}
+        {/* Deceased List Grid with Search & Branch Filters */}
         <DeceasedList
           deceased={deceased}
           branches={branches}
@@ -304,11 +420,22 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
-        <p>מערכת ״נר נשמה״ לניהול ימי פטירה משפחתיים &bull; מחושב הלכתית לפי שקיעת החמה ולוח השנה העברי</p>
+      <footer className="bg-white border-t border-slate-200/80 py-8 text-center text-xs text-slate-500 mt-12 space-y-1">
+        <p className="font-semibold text-slate-700">
+          מערכת ״נר נשמה״ לניהול ימי פטירה משפחתיים &bull; מחושב לפי לוח השנה העברי ושקיעת החמה
+        </p>
+        <p className="text-[11px] text-slate-400">
+          כל הזכויות שמורות &bull; תמיכה מלאה ב-Google Calendar, Apple Calendar ו-Outlook
+        </p>
       </footer>
 
       {/* Modals */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
+      />
+
       <DeceasedModal
         isOpen={isAddModalOpen}
         onClose={() => {
@@ -318,7 +445,7 @@ export default function HomePage() {
         onSave={handleSaveDeceased}
         branches={branches}
         initialData={editingDeceased}
-        calendarId={currentCalendar?.id || 'cal-default'}
+        calendarId={currentCalendar?.id || '11111111-1111-1111-1111-111111111111'}
       />
 
       <BranchManagerModal
@@ -326,7 +453,7 @@ export default function HomePage() {
         onClose={() => setIsBranchesModalOpen(false)}
         branches={branches}
         deceased={deceased}
-        calendarId={currentCalendar?.id || 'cal-default'}
+        calendarId={currentCalendar?.id || '11111111-1111-1111-1111-111111111111'}
         onAddBranch={handleAddBranch}
         onDeleteBranch={handleDeleteBranch}
       />
@@ -344,7 +471,7 @@ export default function HomePage() {
         isOpen={isNewCalendarModalOpen}
         onClose={() => setIsNewCalendarModalOpen(false)}
         onCreateCalendar={handleCreateCalendar}
-        currentUserName="ספי ישראלי"
+        currentUserName={currentUser?.name || 'שלום יוסף זאב'}
       />
     </div>
   );
