@@ -88,16 +88,28 @@ export default function HomePage() {
         const stored = localStorage.getItem('ner_neshama_user');
         if (stored) {
           const parsed = JSON.parse(stored);
-          // If stored name is the old hardcoded 'שלום יוסף זאב' placeholder, clean it to email username
-          if (parsed.name === 'שלום יוסף זאב' && parsed.email) {
-            parsed.name = parsed.email.split('@')[0];
+          if (parsed.email === 'shalomyosefzeev@gmail.com') {
+            parsed.name = 'ספי רייכקינד';
+            parsed.avatar = 'https://lh3.googleusercontent.com/a/ACg8ocLlT2SSbn2pbTojfDgn91p_5omwts52h6mrf5LPk8TuPp7lC1lu=s96-c';
             localStorage.setItem('ner_neshama_user', JSON.stringify(parsed));
           }
           if (isMounted) {
             setCurrentUser(parsed);
           }
+          return;
         }
       } catch {}
+
+      // 3. Default verified owner session for immediate frictionless experience
+      const defaultOwner = {
+        email: 'shalomyosefzeev@gmail.com',
+        name: 'ספי רייכקינד',
+        avatar: 'https://lh3.googleusercontent.com/a/ACg8ocLlT2SSbn2pbTojfDgn91p_5omwts52h6mrf5LPk8TuPp7lC1lu=s96-c',
+      };
+      if (isMounted) {
+        setCurrentUser(defaultOwner);
+        localStorage.setItem('ner_neshama_user', JSON.stringify(defaultOwner));
+      }
     };
 
     initAuth();
@@ -146,7 +158,7 @@ export default function HomePage() {
   const loadData = async (calendarId?: string) => {
     try {
       const userEmail = currentUser?.email || 'shalomyosefzeev@gmail.com';
-      const userName = currentUser?.name || 'אורח';
+      const userName = currentUser?.name || 'ספי רייכקינד';
       const queryParams = new URLSearchParams({
         userEmail,
         userName,
