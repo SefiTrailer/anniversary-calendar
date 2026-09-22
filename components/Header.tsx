@@ -13,13 +13,14 @@ import {
   LogIn,
   LogOut,
   ChevronDown,
-  User as UserIcon,
+  LayoutGrid,
 } from 'lucide-react';
 
 interface HeaderProps {
   calendars: CalendarProject[];
   currentCalendar: CalendarProject | null;
   onSelectCalendar: (cal: CalendarProject) => void;
+  onBackToHub?: () => void;
   onOpenNewCalendar: () => void;
   onOpenBranches: () => void;
   onOpenAddDeceased: () => void;
@@ -29,12 +30,14 @@ interface HeaderProps {
   currentUser: { email: string; name: string; avatar?: string | null } | null;
   membership: UserMembership | null;
   isAdmin: boolean;
+  todayHebrewDate?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   calendars,
   currentCalendar,
   onSelectCalendar,
+  onBackToHub,
   onOpenNewCalendar,
   onOpenBranches,
   onOpenAddDeceased,
@@ -44,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   membership,
   isAdmin,
+  todayHebrewDate,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -73,7 +77,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex flex-col md:flex-row items-center justify-between gap-3.5">
           {/* Logo & Brand Identity */}
           <div className="flex items-center justify-between w-full md:w-auto">
-            <div className="flex items-center gap-3">
+            <button
+              onClick={() => onBackToHub && onBackToHub()}
+              className="flex items-center gap-3 text-right hover:opacity-90 transition cursor-pointer"
+            >
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex items-center justify-center text-amber-600 shadow-xs">
                 <Flame className="w-6 h-6 animate-pulse" />
               </div>
@@ -87,10 +94,10 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 hidden sm:block font-medium">
-                  לוח זיכרון משפחתי מסונכרן ליומן גוגל
+                  {todayHebrewDate ? `היום: ${todayHebrewDate}` : 'לוח זיכרון משפחתי מסונכרן ליומן גוגל'}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Mobile Auth Button */}
             <div className="md:hidden">
@@ -118,80 +125,104 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Navigation & Controls Bar */}
           <div className="flex items-center gap-2.5 w-full md:w-auto justify-end flex-wrap">
-            {/* Calendar Project Switcher */}
-            <div className="flex items-center bg-slate-100/90 rounded-xl p-1 border border-slate-200 shadow-inner">
-              <Calendar className="w-4 h-4 text-slate-500 mr-2 ml-1 shrink-0" />
-              <select
-                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer py-1 pr-1 pl-2 max-w-[170px] truncate"
-                value={currentCalendar?.id || ''}
-                onChange={(e) => {
-                  const selected = calendars.find((c) => c.id === e.target.value);
-                  if (selected) onSelectCalendar(selected);
-                }}
-              >
-                {calendars.map((cal) => (
-                  <option key={cal.id} value={cal.id}>
-                    {cal.name}
-                  </option>
-                ))}
-              </select>
+            {/* If NOT logged in: Show clear login action */}
+            {!currentUser && (
               <button
-                onClick={() => {
-                  if (!currentUser) {
-                    onOpenAuth();
-                  } else {
-                    onOpenNewCalendar();
-                  }
-                }}
-                className="p-1 text-slate-500 hover:text-blue-600 hover:bg-white rounded-lg transition shadow-xs cursor-pointer"
-                title="צור פרויקט יומן משפחתי חדש"
+                onClick={onOpenAuth}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-l from-blue-700 to-indigo-800 hover:from-blue-800 hover:to-indigo-900 rounded-xl transition shadow-xs cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Family Branches (Admin Only) */}
-            {isAdmin && (
-              <button
-                onClick={onOpenBranches}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300/80 rounded-xl hover:bg-slate-50 transition shadow-xs"
-              >
-                <Layers className="w-3.5 h-3.5 text-slate-500" />
-                <span>ענפי משפחה</span>
+                <LogIn className="w-3.5 h-3.5" />
+                <span>כניסה למערכת / התחברות</span>
               </button>
             )}
 
-            {/* Google Sync Button */}
-            <button
-              onClick={onOpenSync}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50/80 border border-blue-200/80 rounded-xl hover:bg-blue-100 transition shadow-xs"
-            >
-              <Share2 className="w-3.5 h-3.5 text-blue-600" />
-              <span>סנכרון ליומן גוגל</span>
-            </button>
+            {/* If logged in: Show Calendar Controls */}
+            {currentUser && (
+              <>
+                {/* Calendar Project Switcher (When calendars exist) */}
+                {calendars.length > 0 && (
+                  <div className="flex items-center bg-slate-100/90 rounded-xl p-1 border border-slate-200 shadow-inner">
+                    <Calendar className="w-4 h-4 text-slate-500 mr-2 ml-1 shrink-0" />
+                    <select
+                      className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer py-1 pr-1 pl-2 max-w-[170px] truncate"
+                      value={currentCalendar?.id || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) {
+                          if (onBackToHub) onBackToHub();
+                        } else {
+                          const selected = calendars.find((c) => c.id === val);
+                          if (selected) onSelectCalendar(selected);
+                        }
+                      }}
+                    >
+                      <option value="">📂 כל היומנים שלי</option>
+                      {calendars.map((cal) => (
+                        <option key={cal.id} value={cal.id}>
+                          {cal.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={onOpenNewCalendar}
+                      className="p-1 text-slate-500 hover:text-blue-600 hover:bg-white rounded-lg transition shadow-xs cursor-pointer"
+                      title="צור פרויקט יומן משפחתי חדש"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
 
-            {/* Primary Action: Add Deceased */}
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  onOpenAuth();
-                } else {
-                  onOpenAddDeceased();
-                }
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>הוסף נפטר</span>
-            </button>
+                {/* Actions active ONLY when a specific calendar is open */}
+                {currentCalendar && (
+                  <>
+                    {/* Family Branches (Admin Only) */}
+                    {isAdmin && (
+                      <button
+                        onClick={onOpenBranches}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300/80 rounded-xl hover:bg-slate-50 transition shadow-xs cursor-pointer"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-slate-500" />
+                        <span>ענפי משפחה</span>
+                      </button>
+                    )}
 
-            {/* User Profile / Authentication Menu */}
-            <div className="relative hidden md:block" ref={userMenuRef}>
-              {currentUser ? (
-                <div>
+                    {/* Google Sync Button */}
+                    <button
+                      onClick={onOpenSync}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50/80 border border-blue-200/80 rounded-xl hover:bg-blue-100 transition shadow-xs cursor-pointer"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>סנכרון ליומן גוגל</span>
+                    </button>
+
+                    {/* Primary Action: Add Deceased */}
+                    <button
+                      onClick={onOpenAddDeceased}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>הוסף נפטר</span>
+                    </button>
+                  </>
+                )}
+
+                {/* If on Hub and has no calendar open, show Create Calendar button */}
+                {!currentCalendar && (
+                  <button
+                    onClick={onOpenNewCalendar}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>צור יומן חדש</span>
+                  </button>
+                )}
+
+                {/* User Profile / Authentication Menu */}
+                <div className="relative hidden md:block" ref={userMenuRef}>
                   <button
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="flex items-center gap-2 p-1 pl-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-xs"
+                    className="flex items-center gap-2 p-1 pl-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-xs cursor-pointer"
                   >
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-center shadow-xs overflow-hidden">
                       {currentUser.avatar ? (
@@ -205,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
                         {currentUser.name}
                       </span>
                       <span className="block text-[10px] text-slate-400 font-medium">
-                        {isAdmin ? 'מנהל יומן' : 'חבר משפחה'}
+                        {isAdmin ? 'מנהל יומן' : 'משתמש רשום'}
                       </span>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 mr-0.5" />
@@ -236,24 +267,37 @@ export const Header: React.FC<HeaderProps> = ({
                         <button
                           onClick={() => {
                             setIsUserMenuOpen(false);
-                            onOpenNewCalendar();
+                            if (onBackToHub) onBackToHub();
                           }}
-                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition"
+                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition cursor-pointer"
                         >
-                          <Plus className="w-4 h-4 text-slate-400" />
-                          <span>צור יומן משפחתי נוסף</span>
+                          <LayoutGrid className="w-4 h-4 text-slate-400" />
+                          <span>מרכז היומנים שלי</span>
                         </button>
 
                         <button
                           onClick={() => {
                             setIsUserMenuOpen(false);
-                            onOpenSync();
+                            onOpenNewCalendar();
                           }}
-                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition"
+                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition cursor-pointer"
                         >
-                          <Share2 className="w-4 h-4 text-slate-400" />
-                          <span>הגדרות סנכרון אישי</span>
+                          <Plus className="w-4 h-4 text-slate-400" />
+                          <span>צור יומן משפחתי נוסף</span>
                         </button>
+
+                        {currentCalendar && (
+                          <button
+                            onClick={() => {
+                              setIsUserMenuOpen(false);
+                              onOpenSync();
+                            }}
+                            className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-xl transition cursor-pointer"
+                          >
+                            <Share2 className="w-4 h-4 text-slate-400" />
+                            <span>הגדרות סנכרון אישי</span>
+                          </button>
+                        )}
 
                         <div className="border-t border-slate-100 my-1" />
 
@@ -262,7 +306,7 @@ export const Header: React.FC<HeaderProps> = ({
                             setIsUserMenuOpen(false);
                             onSignOut();
                           }}
-                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl transition"
+                          className="w-full text-right flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer"
                         >
                           <LogOut className="w-4 h-4 text-red-500" />
                           <span>התנתק מהחשבון</span>
@@ -271,16 +315,8 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   )}
                 </div>
-              ) : (
-                <button
-                  onClick={onOpenAuth}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition shadow-xs"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>התחברות / הרשמה</span>
-                </button>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       </div>

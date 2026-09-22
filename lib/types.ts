@@ -5,6 +5,8 @@ export interface CalendarProject {
   created_by_user_id: string;
   created_by_user_name: string;
   created_at: string;
+  deceased_count?: number;
+  branches_count?: number;
 }
 
 export interface FamilyBranch {

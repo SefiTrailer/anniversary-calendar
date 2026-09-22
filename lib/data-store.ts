@@ -190,7 +190,7 @@ export const DataStore = {
         (moreCals || []).forEach((c: any) => list.push(c as CalendarProject));
       }
 
-      if (list.length > 0) return list;
+      return list;
     } catch {
       // fallback
     }
@@ -200,7 +200,7 @@ export const DataStore = {
       if (c.created_by_user_id === userEmail) return true;
       return cache.memberships.some(m => m.calendar_id === c.id && m.user_email === userEmail);
     });
-    return allowed.length > 0 ? allowed : [cache.calendars[0]];
+    return allowed;
   },
 
   async getUserMembership(calendarId: string, userEmail: string): Promise<UserMembership | null> {

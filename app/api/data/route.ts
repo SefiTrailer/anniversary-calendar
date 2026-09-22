@@ -6,11 +6,31 @@ import crypto from 'crypto';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const calendarId = searchParams.get('calendarId');
-  const userEmail = searchParams.get('userEmail') || 'sefi@example.com';
-  const userName = searchParams.get('userName') || 'ספי ישראלי';
+  const userEmail = searchParams.get('userEmail');
+  const userName = searchParams.get('userName') || 'אורח';
 
-  // 1. Fetch only calendars accessible to this user
-  const userCalendars = await DataStore.getUserCalendars(userEmail);
+  // If unauthenticated guest, return empty calendars list
+  if (!userEmail || userEmail === 'guest@example.com') {
+    return NextResponse.json({ calendars: [] });
+  }
+
+  // 1. Fetch only calendars accessible to this specific user
+  const rawCalendars = await DataStore.getUserCalendars(userEmail);
+  const userCalendars = await Promise.all(
+    rawCalendars.map(async (cal) => {
+      try {
+        const d = await DataStore.getDeceased(cal.id);
+        const b = await DataStore.getBranches(cal.id);
+        return {
+          ...cal,
+          deceased_count: d.length,
+          branches_count: b.length,
+        };
+      } catch {
+        return cal;
+      }
+    })
+  );
 
   if (calendarId) {
     // Verify user has access to this calendar
