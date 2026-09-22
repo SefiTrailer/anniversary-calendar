@@ -1,0 +1,111 @@
+{
+  "calendars": [
+    {
+      "id": "cal-default",
+      "name": "יומן משפחת ישראלי המורחבת",
+      "description": "לוח ימי פטירה (יארצייט) המשפחתי לכל ענפי המשפחה",
+      "created_by_user_id": "user-sefi",
+      "created_by_user_name": "ספי ישראלי",
+      "created_at": "2026-09-22T07:43:03.466Z"
+    }
+  ],
+  "branches": [
+    {
+      "id": "branch-1",
+      "calendar_id": "cal-default",
+      "name": "ענף סבא ישראל מאיר (צד אבא)",
+      "color": "#2563eb",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    },
+    {
+      "id": "branch-2",
+      "calendar_id": "cal-default",
+      "name": "ענף סבתא שרה רבקה (צד אמא)",
+      "color": "#059669",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    },
+    {
+      "id": "branch-3",
+      "calendar_id": "cal-default",
+      "name": "ענף משפחת כהן (מחותנים)",
+      "color": "#d97706",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    }
+  ],
+  "deceased": [
+    {
+      "id": "dec-1",
+      "calendar_id": "cal-default",
+      "branch_id": "branch-1",
+      "first_name": "ישראל מאיר",
+      "last_name": "ישראלי",
+      "father_or_mother_name": "בן אברהם",
+      "hebrew_day": 17,
+      "hebrew_month": "Adar",
+      "hebrew_year": 5742,
+      "gregorian_original_date": "1982-03-12",
+      "after_sunset": true,
+      "leap_year_preference": "Adar II",
+      "notes": "קבור בהר המנוחות גוש ב׳, לומר משניות אותיות נשמה",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    },
+    {
+      "id": "dec-2",
+      "calendar_id": "cal-default",
+      "branch_id": "branch-2",
+      "first_name": "שרה רבקה",
+      "last_name": "לוי",
+      "father_or_mother_name": "בת חיים",
+      "hebrew_day": 24,
+      "hebrew_month": "Tevet",
+      "hebrew_year": 5755,
+      "gregorian_original_date": "1994-12-27",
+      "after_sunset": false,
+      "leap_year_preference": "Adar II",
+      "notes": "צדקה לעילוי נשמתה ביום הפטירה",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    },
+    {
+      "id": "dec-3",
+      "calendar_id": "cal-default",
+      "branch_id": "branch-3",
+      "first_name": "יוסף שלום",
+      "last_name": "כהן",
+      "father_or_mother_name": "בן יצחק",
+      "hebrew_day": 9,
+      "hebrew_month": "Av",
+      "hebrew_year": 5763,
+      "gregorian_original_date": "2003-08-07",
+      "after_sunset": false,
+      "leap_year_preference": "Adar II",
+      "notes": "קבור בסגולה בפתח תקווה",
+      "created_at": "2026-09-22T07:43:03.468Z"
+    }
+  ],
+  "memberships": [
+    {
+      "id": "mem-1",
+      "calendar_id": "cal-default",
+      "user_email": "sefi@example.com",
+      "user_name": "ספי ישראלי",
+      "role": "admin",
+      "feed_token": "feed-all-branches-demo",
+      "selected_branch_ids": [
+        "branch-1",
+        "branch-2",
+        "branch-3"
+      ]
+    },
+    {
+      "id": "mem-2",
+      "calendar_id": "cal-default",
+      "user_email": "dan@example.com",
+      "user_name": "דן (צד אבא בלבד)",
+      "role": "member",
+      "feed_token": "feed-branch-1-demo",
+      "selected_branch_ids": [
+        "branch-1"
+      ]
+    }
+  ]
+}
