@@ -5,14 +5,18 @@ export interface DeceasedRecord {
   calendar_id: string;
   branch_id: string;
   branch_name?: string;
+  title?: string;
   first_name: string;
   last_name: string;
   father_or_mother_name?: string; // e.g. "בן אברהם" או "בת שרה"
-  hebrew_day: number;
-  hebrew_month: string; // e.g. 'Adar', 'Nisan', 'Tishrei'
-  hebrew_year: number; // e.g. 5742
-  gregorian_original_date?: string; // e.g. '1982-03-12'
-  after_sunset: boolean;
+  gender?: 'male' | 'female';
+  generation?: number;
+  relationship?: string;
+  hebrew_day?: number | null;
+  hebrew_month?: string | null; // e.g. 'Adar', 'Nisan', 'Tishrei'
+  hebrew_year?: number | null; // e.g. 5742
+  gregorian_original_date?: string | null; // e.g. '1982-03-12'
+  after_sunset?: boolean;
   leap_year_preference?: 'Adar II' | 'Adar I' | 'both';
   notes?: string;
   created_at?: string;
@@ -117,12 +121,18 @@ export function formatHebrewDateString(day: number, monthName: string, year: num
  * Example: י״ג באדר תשמ״ב (12/03/1982)
  */
 export function formatDisplayDateWithGregorian(
-  hebrew_day: number,
-  hebrew_month: string,
-  hebrew_year: number,
-  gregorian_original_date?: string
+  hebrew_day?: number | null,
+  hebrew_month?: string | null,
+  hebrew_year?: number | null,
+  gregorian_original_date?: string | null
 ): string {
-  const hebFormatted = formatHebrewDateString(hebrew_day, hebrew_month, hebrew_year);
+  if (!hebrew_day || !hebrew_month) {
+    if (hebrew_month && hebrew_year) {
+      return `חודש ${hebrew_month} ${formatHebrewYear(hebrew_year)} (יום לא אומת)`;
+    }
+    return 'ללא תאריך (להשלמה)';
+  }
+  const hebFormatted = formatHebrewDateString(hebrew_day, hebrew_month, hebrew_year || 5700);
   if (!gregorian_original_date) {
     return hebFormatted;
   }
@@ -149,6 +159,9 @@ export interface UpcomingYahrzeit {
  * Calculates upcoming Yahrzeits for a deceased person for the given number of years.
  */
 export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears: number = 10): UpcomingYahrzeit[] {
+  if (!deceased.hebrew_day || !deceased.hebrew_month) {
+    return [];
+  }
   const results: UpcomingYahrzeit[] = [];
   const currentHDate = new HDate();
   const currentYear = currentHDate.getFullYear();
@@ -179,7 +192,7 @@ export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears:
 
       const yahrzeitHDate = new HDate(safeDay, targetMonth, targetYear);
       const greg = yahrzeitHDate.greg();
-      const yearsPassed = targetYear - deceased.hebrew_year;
+      const yearsPassed = deceased.hebrew_year ? targetYear - deceased.hebrew_year : 0;
 
       const yStr = greg.getFullYear();
       const mStr = String(greg.getMonth() + 1).padStart(2, '0');
@@ -215,8 +228,11 @@ export function getGoogleCalendarDirectAddUrl(
   upcoming: UpcomingYahrzeit,
   branchName?: string
 ): string {
-  const displayName = `${person.first_name} ${person.last_name}`.trim();
-  const title = `יארצייט: ${displayName} ז"ל (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+  const titlePrefix = person.title ? `${person.title} ` : '';
+  const isMartyr = person.notes?.includes('הי"ד') || person.last_name?.includes('הי"ד');
+  const honorific = isMartyr ? 'הי"ד' : (person.gender === 'female' || person.title === 'מרת' ? 'ע"ה' : 'ז"ל');
+  const displayName = `${titlePrefix}${person.first_name} ${person.last_name}`.trim();
+  const title = `יארצייט: ${displayName} ${honorific} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
   const originalDate = formatDisplayDateWithGregorian(
     person.hebrew_day,
     person.hebrew_month,
@@ -224,8 +240,13 @@ export function getGoogleCalendarDirectAddUrl(
     person.gregorian_original_date
   );
 
+  const relationLine = person.relationship 
+    ? `קרבה לבעל היומן: ${person.relationship}${person.generation ? ` (דור ${person.generation} מעל בעל היומן)` : ''}`
+    : (person.generation ? `דור ${person.generation} במשפחה` : '');
+
   const details = [
-    `יום השנה לפטירת ${displayName} ז"ל`,
+    `יום השנה לפטירת ${displayName} ${honorific}`,
+    relationLine,
     `תאריך עברי מקורי: ${originalDate}`,
     branchName ? `ענף משפחתי: ${branchName}` : '',
     person.notes ? `הערות ומנהגים: ${person.notes}` : '',

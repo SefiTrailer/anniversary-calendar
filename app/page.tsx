@@ -11,6 +11,8 @@ import { AuthModal } from '@/components/AuthModal';
 import { ShareCalendarModal } from '@/components/ShareCalendarModal';
 import { DeleteCalendarConfirmModal } from '@/components/DeleteCalendarConfirmModal';
 import { GemImportModal } from '@/components/GemImportModal';
+import { FamilyTreeView } from '@/components/FamilyTreeView';
+import { MissingDatesView } from '@/components/MissingDatesView';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
 import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
@@ -32,6 +34,10 @@ import {
   CheckCircle2,
   ExternalLink,
   MessageCircle,
+  AlertTriangle,
+  Download,
+  FolderTree,
+  List,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -69,6 +75,7 @@ export default function HomePage() {
   const [calendarToDelete, setCalendarToDelete] = useState<CalendarProject | null>(null);
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
   const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
 
   const [loading, setLoading] = useState(true);
 
@@ -462,6 +469,28 @@ export default function HomePage() {
       })
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [targetDeceased, isViewingSomething]);
+
+  const missingDatesCount = useMemo(() => {
+    return deceased.filter(p => !p.hebrew_day || !p.hebrew_month).length;
+  }, [deceased]);
+
+  const webcalFeedUrl = useMemo(() => {
+    if (!membership?.feed_token) return '';
+    const host = typeof window !== 'undefined' ? window.location.host : 'yahrzeit-calendar.vercel.app';
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const protocol = isHttps ? 'webcal:' : 'http:';
+    return `${protocol}//${host}/api/calendar/${membership.feed_token}`;
+  }, [membership]);
+
+  const googleCalendarSubscribeUrl = useMemo(() => {
+    if (!webcalFeedUrl) return '';
+    return `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalFeedUrl)}`;
+  }, [webcalFeedUrl]);
+
+  const icsDownloadUrl = useMemo(() => {
+    if (!membership?.feed_token) return '';
+    return `/api/calendar/${membership.feed_token}`;
+  }, [membership]);
 
   const isAdmin = Boolean(currentUser && membership?.role === 'admin');
 
@@ -1004,6 +1033,17 @@ export default function HomePage() {
                     <span className="text-[11px] text-slate-300 font-bold">ענפי משפחה</span>
                   </div>
 
+                  {missingDatesCount > 0 && (
+                    <button
+                      onClick={() => setViewMode('missing')}
+                      className="flex-1 sm:flex-initial bg-amber-500/20 hover:bg-amber-500/30 transition backdrop-blur-md rounded-2xl p-4 border border-amber-400/40 text-center min-w-[105px] cursor-pointer"
+                      title="לחץ לצפייה בדמויות ברובריקת ללא תאריך"
+                    >
+                      <span className="text-2xl font-black text-amber-300 block">{missingDatesCount}</span>
+                      <span className="text-[11px] text-amber-200 font-bold">ללא תאריך</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setIsShareModalOpen(true)}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
@@ -1012,6 +1052,87 @@ export default function HomePage() {
                     <span>שתף יומן זה</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* View Mode Navigation Tabs & 1-Click Sync Bar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
+              {/* Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl overflow-x-auto">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer shrink-0 ${
+                    viewMode === 'list'
+                      ? 'bg-white text-blue-700 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <List className="w-4 h-4" />
+                  <span>רשימת אזכרות</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200/80 text-slate-700">
+                    {deceased.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewMode('tree')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer shrink-0 ${
+                    viewMode === 'tree'
+                      ? 'bg-white text-blue-700 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <FolderTree className="w-4 h-4" />
+                  <span>עץ המשפחה והדורות</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                    דורות 1-8
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewMode('missing')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer shrink-0 ${
+                    viewMode === 'missing'
+                      ? 'bg-white text-amber-900 shadow-xs ring-1 ring-amber-300'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <span>רובריקת ״ללא תאריך״</span>
+                  {missingDatesCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-950">
+                      {missingDatesCount} להשלמה
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* 1-Click All Events to Google Calendar / ICS Download */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+                {googleCalendarSubscribeUrl && (
+                  <a
+                    href={googleCalendarSubscribeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-[1.01] active:scale-95 cursor-pointer"
+                    title="בלחיצה אחת: כל ימי הפטירה יתווספו יחד ליומן גוגל שלך, כולל תואר, קרבה ודור"
+                  >
+                    <CalendarIcon className="w-4 h-4" />
+                    <span>סנכרן את כל האזכרות ל-Google Calendar</span>
+                  </a>
+                )}
+
+                {icsDownloadUrl && (
+                  <a
+                    href={icsDownloadUrl}
+                    download="yahrzeits.ics"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                    title="הורד קובץ יומן מלא (ICS) עבור Apple Calendar, Outlook או סמארטפון"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">הורד קובץ ICS</span>
+                  </a>
+                )}
               </div>
             </div>
 
@@ -1037,7 +1158,7 @@ export default function HomePage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <span className="text-lg font-black text-slate-900 block leading-tight font-serif">
-                            {person.first_name} {person.last_name} ז״ל
+                            {person.title ? `${person.title} ` : ''}{person.first_name} {person.last_name} ז״ל
                           </span>
                           {person.father_or_mother_name && (
                             <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
@@ -1079,17 +1200,45 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Deceased List Grid with Search & Branch Filters */}
-            <DeceasedList
-              deceased={deceased}
-              branches={branches}
-              isAdmin={isAdmin}
-              onEdit={(person) => {
-                setEditingDeceased(person);
-                setIsAddModalOpen(true);
-              }}
-              onDelete={handleDeleteDeceased}
-            />
+            {/* View Mode Switching: List / Tree / Missing Rubric */}
+            {viewMode === 'list' && (
+              <DeceasedList
+                deceased={deceased}
+                branches={branches}
+                isAdmin={isAdmin}
+                onEdit={(person) => {
+                  setEditingDeceased(person);
+                  setIsAddModalOpen(true);
+                }}
+                onDelete={handleDeleteDeceased}
+              />
+            )}
+
+            {viewMode === 'tree' && (
+              <FamilyTreeView
+                deceased={deceased}
+                branches={branches}
+                onEditDeceased={(person) => {
+                  setEditingDeceased(person);
+                  setIsAddModalOpen(true);
+                }}
+                onAddDeceased={(initial) => {
+                  setEditingDeceased(initial as any);
+                  setIsAddModalOpen(true);
+                }}
+              />
+            )}
+
+            {viewMode === 'missing' && (
+              <MissingDatesView
+                deceased={deceased}
+                branches={branches}
+                onEditDeceased={(person) => {
+                  setEditingDeceased(person);
+                  setIsAddModalOpen(true);
+                }}
+              />
+            )}
           </div>
         )}
       </main>

@@ -43,7 +43,8 @@ export async function GET(
     const branchName = branchMap.get(dec.branch_id) || 'כללי';
     const upcomingList = calculateUpcomingYahrzeits(dec, 10);
 
-    const displayName = `${dec.first_name} ${dec.last_name}`.trim();
+    const titlePrefix = dec.title ? `${dec.title} ` : '';
+    const displayName = `${titlePrefix}${dec.first_name} ${dec.last_name}`.trim();
     const parentName = dec.father_or_mother_name ? ` (${dec.father_or_mother_name})` : '';
     const originalDateFormatted = formatDisplayDateWithGregorian(
       dec.hebrew_day,
@@ -51,6 +52,13 @@ export async function GET(
       dec.hebrew_year,
       dec.gregorian_original_date
     );
+
+    const isMartyr = dec.notes?.includes('הי"ד') || dec.last_name?.includes('הי"ד');
+    const honorificSuffix = isMartyr ? 'הי"ד' : (dec.gender === 'female' || dec.title === 'מרת' ? 'ע"ה' : 'ז"ל');
+    
+    const relationLine = dec.relationship 
+      ? `קרבה לבעל היומן: ${dec.relationship}${dec.generation ? ` (דור ${dec.generation} מעל בעל היומן)` : ''}`
+      : (dec.generation ? `דור ${dec.generation} במשפחה` : '');
 
     for (const upcoming of upcomingList) {
       // Event dates: All-day event on upcoming.gregorianDate
@@ -69,9 +77,10 @@ export async function GET(
         allDay: true,
         sequence: 1,
         stamp: new Date(),
-        summary: `יארצייט: ${displayName} ז"ל${yearsPassedText}`,
+        summary: `יארצייט: ${displayName} ${honorificSuffix}${yearsPassedText}`,
         description: [
-          `יום השנה לפטירת ${displayName}${parentName} ז"ל`,
+          `יום השנה לפטירת ${displayName}${parentName} ${honorificSuffix}`,
+          relationLine,
           `תאריך עברי מקורי: ${originalDateFormatted}`,
           `ענף משפחתי: ${branchName}`,
           dec.notes ? `הערות ומנהגים: ${dec.notes}` : '',
@@ -79,7 +88,7 @@ export async function GET(
         ]
           .filter(Boolean)
           .join('\n'),
-        location: dec.notes?.includes('קבור') ? dec.notes : undefined,
+        location: dec.notes?.includes('קבור') || dec.notes?.includes('מנוחת') ? dec.notes : undefined,
         url: request.nextUrl.origin,
       });
     }

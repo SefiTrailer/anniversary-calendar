@@ -32,6 +32,11 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
   const [lastName, setLastName] = useState('');
   const [parentName, setParentName] = useState('');
   const [branchId, setBranchId] = useState('');
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [title, setTitle] = useState('ר\'');
+  const [relationship, setRelationship] = useState('');
+  const [generation, setGeneration] = useState(2);
+  const [hasConfirmedDate, setHasConfirmedDate] = useState(true);
 
   // Date input mode: 'hebrew' or 'gregorian'
   const [dateMode, setDateMode] = useState<'hebrew' | 'gregorian'>('hebrew');
@@ -59,6 +64,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       setLastName(initialData.last_name || '');
       setParentName(initialData.father_or_mother_name || '');
       setBranchId(initialData.branch_id || (branches[0]?.id || ''));
+      const detectedGender = initialData.gender || (initialData.title === 'מרת' || initialData.title === 'הרבנית' ? 'female' : 'male');
+      setGender(detectedGender);
+      setTitle(initialData.title || (detectedGender === 'female' ? 'מרת' : 'ר\''));
+      setRelationship(initialData.relationship || '');
+      setGeneration(initialData.generation || 2);
+      const isDateValid = Boolean(initialData.hebrew_day && initialData.hebrew_month);
+      setHasConfirmedDate(isDateValid);
       setHebrewDay(initialData.hebrew_day || 1);
       setHebrewMonth(initialData.hebrew_month || 'Nisan');
       setHebrewYear(initialData.hebrew_year || 5780);
@@ -72,6 +84,11 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       setLastName('');
       setParentName('');
       setBranchId(branches[0]?.id || '');
+      setGender('male');
+      setTitle('ר\'');
+      setRelationship('');
+      setGeneration(2);
+      setHasConfirmedDate(true);
       setHebrewDay(1);
       setHebrewMonth('Nisan');
       setHebrewYear(5780);
@@ -83,6 +100,16 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
     }
     setConflictData(null);
   }, [initialData, branches, isOpen]);
+
+  // Handle gender change to auto-set default title
+  const handleGenderChange = (newGender: 'male' | 'female') => {
+    setGender(newGender);
+    if (newGender === 'male' && (title === 'מרת' || title === 'הרבנית' || !title)) {
+      setTitle('ר\'');
+    } else if (newGender === 'female' && (title === 'ר\'' || title === 'הרה"ח ר\'' || title === 'הגאון רבי' || !title)) {
+      setTitle('מרת');
+    }
+  };
 
   // When Gregorian date or afterSunset changes in Gregorian mode, auto-compute Hebrew date
   useEffect(() => {
@@ -112,14 +139,18 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
         ...(initialData ? { id: initialData.id } : {}),
         calendar_id: calendarId,
         branch_id: branchId,
+        title: title.trim() || undefined,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         father_or_mother_name: parentName.trim() || undefined,
-        hebrew_day: hebrewDay,
-        hebrew_month: hebrewMonth,
-        hebrew_year: hebrewYear,
-        gregorian_original_date: gregorianDate || undefined,
-        after_sunset: afterSunset,
+        gender,
+        generation: Number(generation) || 2,
+        relationship: relationship.trim() || undefined,
+        hebrew_day: hasConfirmedDate ? hebrewDay : null,
+        hebrew_month: hasConfirmedDate ? hebrewMonth : null,
+        hebrew_year: hasConfirmedDate ? hebrewYear : null,
+        gregorian_original_date: (hasConfirmedDate && gregorianDate) ? gregorianDate : undefined,
+        after_sunset: hasConfirmedDate ? afterSunset : false,
         leap_year_preference: leapPreference,
         notes: notes.trim() || undefined,
       };
@@ -200,15 +231,91 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
             </div>
           )}
 
+          {/* Gender & Title Section */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                מגדר <span className="text-red-500">*</span>
+              </label>
+              <div className="flex bg-slate-200 p-1 rounded-lg text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => handleGenderChange('male')}
+                  className={`flex-1 py-1.5 rounded-md transition text-center ${
+                    gender === 'male' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  גבר (ר׳)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenderChange('female')}
+                  className={`flex-1 py-1.5 rounded-md transition text-center ${
+                    gender === 'female' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  אישה (מרת)
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                תואר כבוד
+              </label>
+              <select
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                {gender === 'male' ? (
+                  <>
+                    <option value="ר׳">ר׳</option>
+                    <option value="הרה״ח ר׳">הרה״ח ר׳</option>
+                    <option value="הגאון רבי">הגאון רבי</option>
+                    <option value="הרב">הרב</option>
+                    <option value="">ללא תואר</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="מרת">מרת</option>
+                    <option value="הרבנית">הרבנית</option>
+                    <option value="העלמה">העלמה</option>
+                    <option value="">ללא תואר</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                דור באילן המשפחה
+              </label>
+              <select
+                value={generation}
+                onChange={(e) => setGeneration(Number(e.target.value))}
+                className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                <option value={1}>דור 1 • הורים</option>
+                <option value={2}>דור 2 • סבים, סבתות, דודים</option>
+                <option value={3}>דור 3 • סבא-רבא / סבתא-רבתא</option>
+                <option value={4}>דור 4 • סבא-רבא-רבא</option>
+                <option value={5}>דור 5 • אבות קדמונים</option>
+                <option value={6}>דור 6 • אבות קדמונים</option>
+                <option value={7}>דור 7 • אבות קדמונים</option>
+              </select>
+            </div>
+          </div>
+
           {/* Names Section */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם פרטי (כולל שם האב/האם לעילוי נשמה) <span className="text-red-500">*</span>
+                שם פרטי <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="למשל: ישראל מאיר בן אברהם"
+                placeholder="למשל: עמנואל נתן"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -217,14 +324,43 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם משפחה של הנפטר <span className="text-red-500">*</span>
+                שם משפחה <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="למשל: ישראלי"
+                placeholder="למשל: רייכקינד"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Relationship & Parent Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                קרבה לבעל היומן (למשל: אם, סבא מצד אב)
+              </label>
+              <input
+                type="text"
+                placeholder="למשל: אם, סבא מצד אב, אחות סבתא"
+                value={relationship}
+                onChange={(e) => setRelationship(e.target.value)}
+                className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                בן/בת (שם האב או האם לעילוי נשמה)
+              </label>
+              <input
+                type="text"
+                placeholder="למשל: בן רבי זאב וואלף ובינה"
+                value={parentName}
+                onChange={(e) => setParentName(e.target.value)}
+                className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
             </div>
           </div>
@@ -247,9 +383,32 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
             </select>
           </div>
 
-          {/* Date Entry Mode Selector */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* Has Confirmed Date Toggle */}
+          <div className="bg-amber-500/10 border border-amber-300/80 rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <div className="text-xs font-bold text-slate-900">האם יש תאריך פטירה מאומת?</div>
+              <div className="text-2xs text-slate-500">
+                {hasConfirmedDate 
+                  ? 'התאריך יוזן כעת ויופיע בלוח השנה ובסנכרון השנתי.' 
+                  : 'הדמות תישמר באילן היוחסין ותופיע ברובריקת ״ללא תאריך״ להשלמה עתידית.'}
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasConfirmedDate}
+                onChange={(e) => setHasConfirmedDate(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+            </label>
+          </div>
+
+          {/* Date Entry Mode Selector (Shown only if hasConfirmedDate is true) */}
+          {hasConfirmedDate && (
+            <>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700">שיטת הזנת תאריך הפטירה:</span>
               <div className="flex bg-slate-200 p-1 rounded-lg text-xs font-semibold">
                 <button
@@ -413,6 +572,8 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               </div>
             </div>
           )}
+          </>
+        )}
 
           {/* Notes & Customs */}
           <div>
