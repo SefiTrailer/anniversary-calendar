@@ -46,7 +46,15 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
   // Compute upcoming Yahrzeits once per person
   const deceasedWithUpcoming = useMemo(() => {
     return deceased.map((person) => {
-      const upcoming = calculateUpcomingYahrzeits(person, 1)[0] || null;
+      let upcoming = null;
+      if (person.hebrew_day && person.hebrew_month) {
+        try {
+          const list = calculateUpcomingYahrzeits(person, 1);
+          upcoming = list && list.length > 0 ? list[0] : null;
+        } catch {
+          upcoming = null;
+        }
+      }
       let daysUntil = Infinity;
       if (upcoming) {
         const today = new Date();

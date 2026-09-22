@@ -457,12 +457,18 @@ export default function HomePage() {
 
     return targetDeceased
       .map((d) => {
-        const up = calculateUpcomingYahrzeits(d, 1)[0];
-        if (!up) return null;
-        const eventDate = new Date(up.gregorianDate);
-        eventDate.setHours(0, 0, 0, 0);
-        const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        return { deceased: d, upcoming: up, diffDays };
+        if (!d.hebrew_day || !d.hebrew_month) return null;
+        try {
+          const upList = calculateUpcomingYahrzeits(d, 1);
+          const up = upList && upList.length > 0 ? upList[0] : null;
+          if (!up) return null;
+          const eventDate = new Date(up.gregorianDate);
+          eventDate.setHours(0, 0, 0, 0);
+          const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          return { deceased: d, upcoming: up, diffDays };
+        } catch {
+          return null;
+        }
       })
       .filter((item): item is { deceased: DeceasedPerson; upcoming: any; diffDays: number } => {
         return item !== null && item.diffDays >= 0 && item.diffDays <= 30;

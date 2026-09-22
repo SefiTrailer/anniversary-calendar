@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { FamilyBranch, DeceasedPerson } from '@/lib/types';
 import { Sparkles, FileJson, Copy, Check, AlertCircle, ArrowRight, BookOpen, Layers, CheckCircle2 } from 'lucide-react';
-import { formatHebrewDateString } from '@/lib/hebrew-calendar';
+import { formatDisplayDateWithGregorian } from '@/lib/hebrew-calendar';
 
 interface GemImportModalProps {
   isOpen: boolean;
@@ -313,7 +313,7 @@ export function GemImportModal({
                               </span>
                             </td>
                             <td className="p-3 text-amber-300 font-serif">
-                              {formatHebrewDateString(d.hebrew_day, d.hebrew_month, d.hebrew_year)}
+                              {formatDisplayDateWithGregorian(d.hebrew_day, d.hebrew_month, d.hebrew_year, d.gregorian_original_date)}
                             </td>
                             <td className="p-3 text-slate-400 font-mono text-[11px]">
                               {d.gregorian_original_date || '—'}

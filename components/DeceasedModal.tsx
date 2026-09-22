@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
 import {
   HEBREW_MONTHS_LIST,
+  HEBREW_TO_HEBCAL_MONTH,
   convertGregorianToHebrew,
   formatDisplayDateWithGregorian,
   formatHebrewDay,
@@ -72,7 +73,8 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       const isDateValid = Boolean(initialData.hebrew_day && initialData.hebrew_month);
       setHasConfirmedDate(isDateValid);
       setHebrewDay(initialData.hebrew_day || 1);
-      setHebrewMonth(initialData.hebrew_month || 'Nisan');
+      const rawMonth = initialData.hebrew_month || 'Nisan';
+      setHebrewMonth(HEBREW_TO_HEBCAL_MONTH[rawMonth] || rawMonth);
       setHebrewYear(initialData.hebrew_year || 5780);
       setGregorianDate(initialData.gregorian_original_date || '');
       setAfterSunset(initialData.after_sunset || false);

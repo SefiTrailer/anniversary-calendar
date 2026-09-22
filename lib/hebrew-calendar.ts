@@ -57,27 +57,50 @@ export const HEBREW_MONTHS_LIST = [
   { id: 'Elul', name: 'אלול' },
 ];
 
+export const HEBREW_TO_HEBCAL_MONTH: Record<string, string> = {
+  'תשרי': 'Tishrei',
+  'חשוון': 'Cheshvan',
+  'חשון': 'Cheshvan',
+  'כסלו': 'Kislev',
+  'טבת': 'Tevet',
+  'שבט': 'Sh\'vat',
+  'אדר': 'Adar',
+  'אדר א׳': 'Adar I',
+  'אדר א': 'Adar I',
+  'אדר ב׳': 'Adar II',
+  'אדר ב': 'Adar II',
+  'ניסן': 'Nisan',
+  'אייר': 'Iyyar',
+  'סיוון': 'Sivan',
+  'סיון': 'Sivan',
+  'תמוז': 'Tamuz',
+  'אב': 'Av',
+  'אלול': 'Elul',
+};
+
 /**
  * Format Hebrew day number to Hebrew letters (e.g. 15 -> ט״ו)
  */
-export function formatHebrewDay(day: number): string {
+export function formatHebrewDay(day?: number | null): string {
+  if (!day || isNaN(day) || day <= 0) return '';
   try {
     return gematriya(day);
   } catch {
-    return day.toString();
+    return String(day);
   }
 }
 
 /**
  * Format Hebrew year to Hebrew letters (e.g. 5742 -> תשמ״ב)
  */
-export function formatHebrewYear(year: number): string {
+export function formatHebrewYear(year?: number | null): string {
+  if (!year || isNaN(year) || year <= 0) return '';
   try {
     // gematriya for Hebrew year (5742 % 1000 = 742 -> תשמ״ב)
     const shortYear = year % 1000;
     return gematriya(shortYear);
   } catch {
-    return year.toString();
+    return String(year);
   }
 }
 
@@ -108,11 +131,19 @@ export function convertGregorianToHebrew(gregDateStr: string, afterSunset: boole
 /**
  * Format full Hebrew date string: "י״ז באדר תשמ״ב"
  */
-export function formatHebrewDateString(day: number, monthName: string, year: number): string {
+export function formatHebrewDateString(
+  day?: number | null,
+  monthName?: string | null,
+  year?: number | null
+): string {
   const dayStr = formatHebrewDay(day);
-  const monthHeb = HEBREW_MONTHS_TRANSLATION[monthName] || monthName;
+  const monthHeb = monthName ? (HEBREW_MONTHS_TRANSLATION[monthName] || monthName) : '';
   const yearStr = formatHebrewYear(year);
-  return `${dayStr} ב${monthHeb} ${yearStr}`;
+
+  if (!dayStr && !monthHeb && !yearStr) return '';
+  if (!dayStr && monthHeb) return `חודש ${monthHeb}${yearStr ? ` ${yearStr}` : ''}`;
+  if (dayStr && !monthHeb) return dayStr;
+  return `${dayStr} ב${monthHeb}${yearStr ? ` ${yearStr}` : ''}`;
 }
 
 /**
@@ -128,10 +159,20 @@ export function formatDisplayDateWithGregorian(
 ): string {
   if (!hebrew_day || !hebrew_month) {
     if (hebrew_month && hebrew_year) {
-      return `חודש ${hebrew_month} ${formatHebrewYear(hebrew_year)} (יום לא אומת)`;
+      const monthHeb = HEBREW_MONTHS_TRANSLATION[hebrew_month] || hebrew_month;
+      const yearStr = formatHebrewYear(hebrew_year);
+      return `חודש ${monthHeb} ${yearStr} (יום לא אומת)`;
+    }
+    if (hebrew_month) {
+      const monthHeb = HEBREW_MONTHS_TRANSLATION[hebrew_month] || hebrew_month;
+      return `חודש ${monthHeb} (יום ושנה לא אומתו)`;
+    }
+    if (hebrew_year) {
+      return `שנת ${formatHebrewYear(hebrew_year)} (יום וחודש טרם אומתו)`;
     }
     return 'ללא תאריך (להשלמה)';
   }
+
   const hebFormatted = formatHebrewDateString(hebrew_day, hebrew_month, hebrew_year || 5700);
   if (!gregorian_original_date) {
     return hebFormatted;
@@ -159,25 +200,29 @@ export interface UpcomingYahrzeit {
  * Calculates upcoming Yahrzeits for a deceased person for the given number of years.
  */
 export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears: number = 10): UpcomingYahrzeit[] {
-  if (!deceased.hebrew_day || !deceased.hebrew_month) {
+  if (!deceased || !deceased.hebrew_day || !deceased.hebrew_month) {
     return [];
   }
   const results: UpcomingYahrzeit[] = [];
   const currentHDate = new HDate();
   const currentYear = currentHDate.getFullYear();
 
+  // Normalize month name to English standard Hebcal name
+  const rawMonth = String(deceased.hebrew_month).trim();
+  const baseMonth = HEBREW_TO_HEBCAL_MONTH[rawMonth] || rawMonth;
+
   for (let i = 0; i < countYears; i++) {
     const targetYear = currentYear + i;
     const isTargetLeap = HDate.isLeapYear(targetYear);
-    let targetMonth = deceased.hebrew_month;
+    let targetMonth = baseMonth;
 
     // Handle Adar in leap years
-    if (deceased.hebrew_month === 'Adar') {
+    if (baseMonth === 'Adar') {
       if (isTargetLeap) {
         // Default halacha is Adar II for Ashkenazim/standard
         targetMonth = deceased.leap_year_preference === 'Adar I' ? 'Adar I' : 'Adar II';
       }
-    } else if (deceased.hebrew_month === 'Adar I' || deceased.hebrew_month === 'Adar II') {
+    } else if (baseMonth === 'Adar I' || baseMonth === 'Adar II') {
       if (!isTargetLeap) {
         targetMonth = 'Adar';
       }
@@ -206,7 +251,7 @@ export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears:
         yearsPassed: Math.max(0, yearsPassed),
       });
     } catch (err) {
-      console.error(`Error calculating yahrzeit for year ${targetYear}:`, err);
+      console.warn(`Could not compute yahrzeit for ${deceased.first_name} ${deceased.last_name} in year ${targetYear}:`, err);
     }
   }
 
