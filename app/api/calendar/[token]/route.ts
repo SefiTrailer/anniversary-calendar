@@ -9,17 +9,17 @@ export async function GET(
 ) {
   const { token } = await params;
 
-  const result = DataStore.getMembershipByToken(token);
+  const result = await DataStore.getMembershipByToken(token);
   if (!result) {
     return new NextResponse('Calendar feed not found or invalid token', { status: 404 });
   }
 
   const { membership, calendar } = result;
-  const allBranches = DataStore.getBranches(calendar.id);
+  const allBranches = await DataStore.getBranches(calendar.id);
   const branchMap = new Map(allBranches.map(b => [b.id, b.name]));
 
   // Get deceased records matching user's selected branches
-  const allDeceased = DataStore.getDeceased(calendar.id);
+  const allDeceased = await DataStore.getDeceased(calendar.id);
   const filteredDeceased = allDeceased.filter(d =>
     membership.selected_branch_ids.includes(d.branch_id)
   );

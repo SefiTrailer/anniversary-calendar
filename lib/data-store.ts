@@ -1,21 +1,18 @@
-import fs from 'fs';
-import path from 'path';
+import { supabase } from './supabase';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from './types';
 
-interface StoreData {
+// Fallback in-memory/file cache for development/offline
+let memoryCache: {
   calendars: CalendarProject[];
   branches: FamilyBranch[];
   deceased: DeceasedPerson[];
   memberships: UserMembership[];
-}
+} | null = null;
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const DATA_FILE = path.join(DATA_DIR, 'calendar_data.json');
-
-const INITIAL_DATA: StoreData = {
+const INITIAL_DATA = {
   calendars: [
     {
-      id: 'cal-default',
+      id: '11111111-1111-1111-1111-111111111111',
       name: 'יומן משפחת ישראלי המורחבת',
       description: 'לוח ימי פטירה (יארצייט) המשפחתי לכל ענפי המשפחה',
       created_by_user_id: 'user-sefi',
@@ -25,32 +22,32 @@ const INITIAL_DATA: StoreData = {
   ],
   branches: [
     {
-      id: 'branch-1',
-      calendar_id: 'cal-default',
+      id: '22222222-2222-2222-2222-222222222221',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
       name: 'ענף סבא ישראל מאיר (צד אבא)',
-      color: '#2563eb', // כחול
+      color: '#2563eb',
       created_at: new Date().toISOString(),
     },
     {
-      id: 'branch-2',
-      calendar_id: 'cal-default',
+      id: '22222222-2222-2222-2222-222222222222',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
       name: 'ענף סבתא שרה רבקה (צד אמא)',
-      color: '#059669', // ירוק אזמרגד
+      color: '#059669',
       created_at: new Date().toISOString(),
     },
     {
-      id: 'branch-3',
-      calendar_id: 'cal-default',
+      id: '22222222-2222-2222-2222-222222222223',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
       name: 'ענף משפחת כהן (מחותנים)',
-      color: '#d97706', // ענבר / זהב
+      color: '#d97706',
       created_at: new Date().toISOString(),
     },
   ],
   deceased: [
     {
-      id: 'dec-1',
-      calendar_id: 'cal-default',
-      branch_id: 'branch-1',
+      id: '33333333-3333-3333-3333-333333333331',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
+      branch_id: '22222222-2222-2222-2222-222222222221',
       first_name: 'ישראל מאיר',
       last_name: 'ישראלי',
       father_or_mother_name: 'בן אברהם',
@@ -59,14 +56,14 @@ const INITIAL_DATA: StoreData = {
       hebrew_year: 5742,
       gregorian_original_date: '1982-03-12',
       after_sunset: true,
-      leap_year_preference: 'Adar II',
+      leap_year_preference: 'Adar II' as const,
       notes: 'קבור בהר המנוחות גוש ב׳, לומר משניות אותיות נשמה',
       created_at: new Date().toISOString(),
     },
     {
-      id: 'dec-2',
-      calendar_id: 'cal-default',
-      branch_id: 'branch-2',
+      id: '33333333-3333-3333-3333-333333333332',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
+      branch_id: '22222222-2222-2222-2222-222222222222',
       first_name: 'שרה רבקה',
       last_name: 'לוי',
       father_or_mother_name: 'בת חיים',
@@ -75,14 +72,14 @@ const INITIAL_DATA: StoreData = {
       hebrew_year: 5755,
       gregorian_original_date: '1994-12-27',
       after_sunset: false,
-      leap_year_preference: 'Adar II',
+      leap_year_preference: 'Adar II' as const,
       notes: 'צדקה לעילוי נשמתה ביום הפטירה',
       created_at: new Date().toISOString(),
     },
     {
-      id: 'dec-3',
-      calendar_id: 'cal-default',
-      branch_id: 'branch-3',
+      id: '33333333-3333-3333-3333-333333333333',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
+      branch_id: '22222222-2222-2222-2222-222222222223',
       first_name: 'יוסף שלום',
       last_name: 'כהן',
       father_or_mother_name: 'בן יצחק',
@@ -91,147 +88,229 @@ const INITIAL_DATA: StoreData = {
       hebrew_year: 5763,
       gregorian_original_date: '2003-08-07',
       after_sunset: false,
-      leap_year_preference: 'Adar II',
+      leap_year_preference: 'Adar II' as const,
       notes: 'קבור בסגולה בפתח תקווה',
       created_at: new Date().toISOString(),
     },
   ],
   memberships: [
     {
-      id: 'mem-1',
-      calendar_id: 'cal-default',
+      id: '44444444-4444-4444-4444-444444444441',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
       user_email: 'sefi@example.com',
       user_name: 'ספי ישראלי',
-      role: 'admin',
+      role: 'admin' as const,
       feed_token: 'feed-all-branches-demo',
-      selected_branch_ids: ['branch-1', 'branch-2', 'branch-3'],
+      selected_branch_ids: [
+        '22222222-2222-2222-2222-222222222221',
+        '22222222-2222-2222-2222-222222222222',
+        '22222222-2222-2222-2222-222222222223',
+      ],
     },
     {
-      id: 'mem-2',
-      calendar_id: 'cal-default',
+      id: '44444444-4444-4444-4444-444444444442',
+      calendar_id: '11111111-1111-1111-1111-111111111111',
       user_email: 'dan@example.com',
       user_name: 'דן (צד אבא בלבד)',
-      role: 'member',
+      role: 'member' as const,
       feed_token: 'feed-branch-1-demo',
-      selected_branch_ids: ['branch-1'],
+      selected_branch_ids: ['22222222-2222-2222-2222-222222222221'],
     },
   ],
 };
 
-function ensureDataFile(): StoreData {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (!fs.existsSync(DATA_FILE)) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_DATA, null, 2), 'utf-8');
-      return INITIAL_DATA;
-    }
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error accessing data file:', err);
-    return INITIAL_DATA;
+function getCache() {
+  if (!memoryCache) {
+    memoryCache = JSON.parse(JSON.stringify(INITIAL_DATA));
   }
-}
-
-function saveDataFile(data: StoreData) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving data file:', err);
-  }
+  return memoryCache!;
 }
 
 export const DataStore = {
-  getAll(): StoreData {
-    return ensureDataFile();
+  async getAll(): Promise<{
+    calendars: CalendarProject[];
+    branches: FamilyBranch[];
+    deceased: DeceasedPerson[];
+    memberships: UserMembership[];
+  }> {
+    try {
+      const [cRes, bRes, dRes, mRes] = await Promise.all([
+        supabase.from('calendars').select('*').order('created_at', { ascending: true }),
+        supabase.from('branches').select('*').order('created_at', { ascending: true }),
+        supabase.from('deceased').select('*').order('created_at', { ascending: true }),
+        supabase.from('calendar_members').select('*'),
+      ]);
+
+      if (cRes.data && cRes.data.length > 0) {
+        return {
+          calendars: cRes.data as CalendarProject[],
+          branches: (bRes.data || []) as FamilyBranch[],
+          deceased: (dRes.data || []) as DeceasedPerson[],
+          memberships: (mRes.data || []) as UserMembership[],
+        };
+      }
+    } catch (err) {
+      console.warn('Supabase query error, using local fallback:', err);
+    }
+
+    return getCache();
   },
 
-  getCalendar(calendarId: string): CalendarProject | undefined {
-    const data = ensureDataFile();
-    return data.calendars.find(c => c.id === calendarId);
+  async getCalendar(calendarId: string): Promise<CalendarProject | undefined> {
+    try {
+      const { data } = await supabase.from('calendars').select('*').eq('id', calendarId).single();
+      if (data) return data as CalendarProject;
+    } catch {
+      // fallback
+    }
+    return getCache().calendars.find(c => c.id === calendarId);
   },
 
-  addCalendar(calendar: CalendarProject) {
-    const data = ensureDataFile();
-    data.calendars.push(calendar);
-    saveDataFile(data);
+  async addCalendar(calendar: CalendarProject) {
+    try {
+      const { data } = await supabase.from('calendars').insert(calendar).select().single();
+      if (data) return data as CalendarProject;
+    } catch (err) {
+      console.error('Supabase addCalendar error:', err);
+    }
+    const cache = getCache();
+    cache.calendars.push(calendar);
     return calendar;
   },
 
-  getBranches(calendarId: string): FamilyBranch[] {
-    const data = ensureDataFile();
-    return data.branches.filter(b => b.calendar_id === calendarId);
+  async getBranches(calendarId: string): Promise<FamilyBranch[]> {
+    try {
+      const { data } = await supabase.from('branches').select('*').eq('calendar_id', calendarId);
+      if (data && data.length > 0) return data as FamilyBranch[];
+    } catch {
+      // fallback
+    }
+    return getCache().branches.filter(b => b.calendar_id === calendarId);
   },
 
-  addBranch(branch: FamilyBranch) {
-    const data = ensureDataFile();
-    data.branches.push(branch);
-    saveDataFile(data);
+  async addBranch(branch: FamilyBranch) {
+    try {
+      const { data } = await supabase.from('branches').insert(branch).select().single();
+      if (data) return data as FamilyBranch;
+    } catch (err) {
+      console.error('Supabase addBranch error:', err);
+    }
+    const cache = getCache();
+    cache.branches.push(branch);
     return branch;
   },
 
-  deleteBranch(branchId: string) {
-    const data = ensureDataFile();
-    data.branches = data.branches.filter(b => b.id !== branchId);
-    // Also remove deceased in this branch
-    data.deceased = data.deceased.filter(d => d.branch_id !== branchId);
-    saveDataFile(data);
+  async deleteBranch(branchId: string) {
+    try {
+      await supabase.from('branches').delete().eq('id', branchId);
+    } catch (err) {
+      console.error('Supabase deleteBranch error:', err);
+    }
+    const cache = getCache();
+    cache.branches = cache.branches.filter(b => b.id !== branchId);
+    cache.deceased = cache.deceased.filter(d => d.branch_id !== branchId);
   },
 
-  getDeceased(calendarId: string): DeceasedPerson[] {
-    const data = ensureDataFile();
-    return data.deceased.filter(d => d.calendar_id === calendarId);
+  async getDeceased(calendarId: string): Promise<DeceasedPerson[]> {
+    try {
+      const { data } = await supabase.from('deceased').select('*').eq('calendar_id', calendarId);
+      if (data && data.length > 0) return data as DeceasedPerson[];
+    } catch {
+      // fallback
+    }
+    return getCache().deceased.filter(d => d.calendar_id === calendarId);
   },
 
-  addDeceased(deceased: DeceasedPerson) {
-    const data = ensureDataFile();
-    data.deceased.push(deceased);
-    saveDataFile(data);
+  async addDeceased(deceased: DeceasedPerson) {
+    try {
+      const { data } = await supabase.from('deceased').insert(deceased).select().single();
+      if (data) return data as DeceasedPerson;
+    } catch (err) {
+      console.error('Supabase addDeceased error:', err);
+    }
+    const cache = getCache();
+    cache.deceased.push(deceased);
     return deceased;
   },
 
-  updateDeceased(id: string, updates: Partial<DeceasedPerson>) {
-    const data = ensureDataFile();
-    const idx = data.deceased.findIndex(d => d.id === id);
+  async updateDeceased(id: string, updates: Partial<DeceasedPerson>) {
+    try {
+      const { data } = await supabase.from('deceased').update(updates).eq('id', id).select().single();
+      if (data) return data as DeceasedPerson;
+    } catch (err) {
+      console.error('Supabase updateDeceased error:', err);
+    }
+    const cache = getCache();
+    const idx = cache.deceased.findIndex(d => d.id === id);
     if (idx !== -1) {
-      data.deceased[idx] = { ...data.deceased[idx], ...updates };
-      saveDataFile(data);
-      return data.deceased[idx];
+      cache.deceased[idx] = { ...cache.deceased[idx], ...updates };
+      return cache.deceased[idx];
     }
     return null;
   },
 
-  deleteDeceased(id: string) {
-    const data = ensureDataFile();
-    data.deceased = data.deceased.filter(d => d.id !== id);
-    saveDataFile(data);
+  async deleteDeceased(id: string) {
+    try {
+      await supabase.from('deceased').delete().eq('id', id);
+    } catch (err) {
+      console.error('Supabase deleteDeceased error:', err);
+    }
+    const cache = getCache();
+    cache.deceased = cache.deceased.filter(d => d.id !== id);
   },
 
-  getMembershipByToken(feedToken: string): { membership: UserMembership; calendar: CalendarProject } | null {
-    const data = ensureDataFile();
-    const membership = data.memberships.find(m => m.feed_token === feedToken);
+  async getMembershipByToken(feedToken: string): Promise<{ membership: UserMembership; calendar: CalendarProject } | null> {
+    try {
+      const { data: member } = await supabase
+        .from('calendar_members')
+        .select('*')
+        .eq('feed_token', feedToken)
+        .single();
+
+      if (member) {
+        const { data: cal } = await supabase
+          .from('calendars')
+          .select('*')
+          .eq('id', member.calendar_id)
+          .single();
+
+        if (cal) {
+          return { membership: member as UserMembership, calendar: cal as CalendarProject };
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    const cache = getCache();
+    const membership = cache.memberships.find(m => m.feed_token === feedToken);
     if (!membership) return null;
-    const calendar = data.calendars.find(c => c.id === membership.calendar_id);
+    const calendar = cache.calendars.find(c => c.id === membership.calendar_id);
     if (!calendar) return null;
     return { membership, calendar };
   },
 
-  saveMembership(membership: UserMembership) {
-    const data = ensureDataFile();
-    const idx = data.memberships.findIndex(
+  async saveMembership(membership: UserMembership) {
+    try {
+      const { data } = await supabase
+        .from('calendar_members')
+        .upsert(membership, { onConflict: 'calendar_id,user_email' })
+        .select()
+        .single();
+      if (data) return data as UserMembership;
+    } catch (err) {
+      console.error('Supabase saveMembership error:', err);
+    }
+
+    const cache = getCache();
+    const idx = cache.memberships.findIndex(
       m => m.calendar_id === membership.calendar_id && m.user_email === membership.user_email
     );
     if (idx !== -1) {
-      data.memberships[idx] = membership;
+      cache.memberships[idx] = membership;
     } else {
-      data.memberships.push(membership);
+      cache.memberships.push(membership);
     }
-    saveDataFile(data);
     return membership;
   },
 };

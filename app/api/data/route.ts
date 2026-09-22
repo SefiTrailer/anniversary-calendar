@@ -7,11 +7,11 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const calendarId = searchParams.get('calendarId');
 
-  const allData = DataStore.getAll();
+  const allData = await DataStore.getAll();
   if (calendarId) {
-    const calendar = DataStore.getCalendar(calendarId);
-    const branches = DataStore.getBranches(calendarId);
-    const deceased = DataStore.getDeceased(calendarId);
+    const calendar = await DataStore.getCalendar(calendarId);
+    const branches = await DataStore.getBranches(calendarId);
+    const deceased = await DataStore.getDeceased(calendarId);
     return NextResponse.json({ calendar, branches, deceased, calendars: allData.calendars });
   }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'add_deceased': {
         const { deceased, forceConfirm } = payload;
-        const currentDeceasedList = DataStore.getDeceased(deceased.calendar_id);
+        const currentDeceasedList = await DataStore.getDeceased(deceased.calendar_id);
 
         // Check for duplicate or date discrepancy unless user explicitly confirmed
         if (!forceConfirm) {
@@ -43,16 +43,16 @@ export async function POST(request: NextRequest) {
 
         const newDeceased = {
           ...deceased,
-          id: `dec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          id: deceased.id || crypto.randomUUID(),
           created_at: new Date().toISOString(),
         };
-        DataStore.addDeceased(newDeceased);
-        return NextResponse.json({ success: true, deceased: newDeceased });
+        const saved = await DataStore.addDeceased(newDeceased);
+        return NextResponse.json({ success: true, deceased: saved });
       }
 
       case 'update_deceased': {
         const { id, updates, forceConfirm } = payload;
-        const currentDeceasedList = DataStore.getDeceased(updates.calendar_id);
+        const currentDeceasedList = await DataStore.getDeceased(updates.calendar_id);
 
         if (!forceConfirm) {
           const conflict = checkDuplicateOrDiscrepancy(currentDeceasedList, updates, id);
@@ -66,38 +66,38 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const updated = DataStore.updateDeceased(id, updates);
+        const updated = await DataStore.updateDeceased(id, updates);
         return NextResponse.json({ success: true, deceased: updated });
       }
 
       case 'delete_deceased': {
         const { id } = payload;
-        DataStore.deleteDeceased(id);
+        await DataStore.deleteDeceased(id);
         return NextResponse.json({ success: true });
       }
 
       case 'add_branch': {
         const { calendar_id, name, color } = payload;
         const newBranch = {
-          id: `branch-${Date.now()}`,
+          id: crypto.randomUUID(),
           calendar_id,
           name,
           color: color || '#2563eb',
           created_at: new Date().toISOString(),
         };
-        DataStore.addBranch(newBranch);
-        return NextResponse.json({ success: true, branch: newBranch });
+        const saved = await DataStore.addBranch(newBranch);
+        return NextResponse.json({ success: true, branch: saved });
       }
 
       case 'delete_branch': {
         const { id } = payload;
-        DataStore.deleteBranch(id);
+        await DataStore.deleteBranch(id);
         return NextResponse.json({ success: true });
       }
 
       case 'create_calendar': {
         const { name, description, user_name, user_email } = payload;
-        const calendarId = `cal-${Date.now()}`;
+        const calendarId = crypto.randomUUID();
         const newCalendar = {
           id: calendarId,
           name,
@@ -106,22 +106,22 @@ export async function POST(request: NextRequest) {
           created_by_user_name: user_name,
           created_at: new Date().toISOString(),
         };
-        DataStore.addCalendar(newCalendar);
+        await DataStore.addCalendar(newCalendar);
 
         // Add a default main branch
         const defaultBranch = {
-          id: `branch-${Date.now()}`,
+          id: crypto.randomUUID(),
           calendar_id: calendarId,
           name: 'ענף ראשי',
           color: '#2563eb',
           created_at: new Date().toISOString(),
         };
-        DataStore.addBranch(defaultBranch);
+        await DataStore.addBranch(defaultBranch);
 
         // Add creator as Admin with their personal feed token
         const feedToken = crypto.randomUUID();
         const membership = {
-          id: `mem-${Date.now()}`,
+          id: crypto.randomUUID(),
           calendar_id: calendarId,
           user_email,
           user_name,
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
           feed_token: feedToken,
           selected_branch_ids: [defaultBranch.id],
         };
-        DataStore.saveMembership(membership);
+        await DataStore.saveMembership(membership);
 
         return NextResponse.json({
           success: true,
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         if (!membership.feed_token) {
           membership.feed_token = crypto.randomUUID();
         }
-        const saved = DataStore.saveMembership(membership);
+        const saved = await DataStore.saveMembership(membership);
         return NextResponse.json({ success: true, membership: saved });
       }
 
