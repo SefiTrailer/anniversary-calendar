@@ -29,6 +29,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# personal & sensitive data
+/personal data/
+personal data/
+*.ged
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
