@@ -125,7 +125,9 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-white rounded-xl border border-amber-200/80 hover:border-amber-400 hover:shadow-md transition-all p-5 flex flex-col justify-between relative overflow-hidden"
+                onClick={() => onOpenLineage?.(p)}
+                className="bg-white rounded-xl border border-amber-200/80 hover:border-amber-400 hover:shadow-md transition-all p-5 flex flex-col justify-between relative overflow-hidden cursor-pointer"
+                title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
               >
                 <div 
                   className="absolute top-0 right-0 left-0 h-1"
@@ -197,8 +199,11 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => onEditDeceased(p)}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditDeceased(p);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>השלם תאריך פטירה</span>

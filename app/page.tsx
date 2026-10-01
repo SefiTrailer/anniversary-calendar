@@ -696,7 +696,9 @@ export default function HomePage() {
                     return (
                       <div
                         key={person.id}
-                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3"
+                        onClick={() => setLineagePerson(person)}
+                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 cursor-pointer hover:border-amber-400 hover:shadow-sm transition"
+                        title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="w-full">
@@ -1293,7 +1295,9 @@ export default function HomePage() {
                     return (
                       <div
                         key={person.id}
-                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition"
+                        onClick={() => setLineagePerson(person)}
+                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition cursor-pointer hover:border-amber-400"
+                        title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="w-full">

@@ -475,13 +475,15 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
             return (
               <div
                 key={person.id}
-                className={`bg-white rounded-3xl border transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-xs hover:shadow-md relative group ${
+                onClick={() => onOpenLineage?.(person)}
+                className={`bg-white rounded-3xl border transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-xs hover:shadow-md relative group cursor-pointer hover:border-amber-400/90 ${
                   isVictim
                     ? 'border-amber-300/90 ring-1 ring-amber-300/30 bg-gradient-to-b from-amber-50/20 to-white'
                     : isComingSoon
                     ? 'border-amber-300/80 ring-1 ring-amber-300/30'
                     : 'border-slate-200/90'
                 }`}
+                title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
               >
                 {/* Branch Color Top Accent Strip */}
                 <div
@@ -538,14 +540,18 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                     {isAdmin && (
                       <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition">
                         <button
-                          onClick={() => onEdit(person)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(person);
+                          }}
                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
                           title="ערוך פרטי נפטר"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (
                               confirm(
                                 `האם אתה בטוח שברצונך למחוק את הרשומה של ${fullName}?`

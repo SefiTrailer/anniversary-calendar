@@ -197,8 +197,9 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                   return (
                     <div
                       key={p.id}
-                      onClick={() => onEditDeceased(p)}
+                      onClick={() => onOpenLineage?.(p)}
                       className="group bg-white rounded-xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all duration-200 p-4 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                      title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                     >
                       {/* Top colored stripe matching branch */}
                       <div 
@@ -308,9 +309,17 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                           </div>
                         )}
 
-                        <span className="text-slate-400 group-hover:text-slate-700 transition-colors p-1 rounded-md hover:bg-slate-100">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditDeceased(p);
+                          }}
+                          className="text-slate-400 hover:text-blue-700 transition-colors p-1 rounded-md hover:bg-slate-100 cursor-pointer"
+                          title="ערוך פרטי נפטר"
+                        >
                           <Edit2 className="w-3.5 h-3.5" />
-                        </span>
+                        </button>
                       </div>
                     </div>
                   );
