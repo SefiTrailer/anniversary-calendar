@@ -2,21 +2,30 @@
 
 import React, { useState } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
-import { formatDisplayDateWithGregorian } from '@/lib/hebrew-calendar';
-import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart } from 'lucide-react';
+import {
+  formatDisplayDateWithGregorian,
+  getDeceasedFormattedParts,
+  getGenerationRelationInfo,
+} from '@/lib/hebrew-calendar';
+import { isHolocaustVictim } from '@/components/DeceasedList';
+import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame } from 'lucide-react';
 
 interface FamilyTreeViewProps {
   deceased: DeceasedPerson[];
   branches: FamilyBranch[];
+  userGeneration?: number;
   onEditDeceased: (deceased: DeceasedPerson) => void;
   onAddDeceased: (initialData?: Partial<DeceasedPerson>) => void;
+  onOpenLineage?: (person: DeceasedPerson) => void;
 }
 
 export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
   deceased,
   branches,
+  userGeneration = 1,
   onEditDeceased,
   onAddDeceased,
+  onOpenLineage,
 }) => {
   const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,16 +47,16 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
 
   // Group by generation
   const generationLabels: Record<number, { title: string; subtitle: string }> = {
-    1: { title: 'דור 1 • הורים', subtitle: 'אבא ואמא, עמודי התווך של הבית' },
-    2: { title: 'דור 2 • סבים, סבתות ואחיהם', subtitle: 'סבא וסבתא מצד אב ומצד אם, דודים ודודות' },
-    3: { title: 'דור 3 • סבא-רבא וסבתא-רבתא', subtitle: 'הורי הסבים והסבתות' },
-    4: { title: 'דור 4 • סבא-רבא-רבא', subtitle: 'ראשי הישיבות, מנהיגי היישוב ומייסדי השכונות' },
-    5: { title: 'דור 5 • אבות קדמונים', subtitle: 'בוני ירושלים ומייסדי היישוב היהודי בארץ' },
-    6: { title: 'דור 6 • אבות קדמונים', subtitle: 'ממנהיגי עליית תלמידי הגר״א ובוני היישוב הישן' },
-    7: { title: 'דור 7 • אבות האומה ומחדשי היישוב', subtitle: 'מחדש היישוב האשכנזי (הרא״ש צורף ורבני ירושלים)' },
-    8: { title: 'דור 8 • שורשי השושלת ורבני אשכנז', subtitle: 'גדולי התורה, שושלת בעל "תוספות יום טוב"' },
+    1: { title: 'דור 1 • בעל היומן', subtitle: 'אני / בעל היומן (ספי)' },
+    2: { title: 'דור 2 • הורים ודודים', subtitle: 'אבא, אמא, דודים ודודות' },
+    3: { title: 'דור 3 • סבים, סבתות ואחיהם', subtitle: 'סבא וסבתא מצד אב ומצד אם, אחי הסבים והסבתות' },
+    4: { title: 'דור 4 • סבא-רבא וסבתא-רבתא', subtitle: 'הורי הסבים והסבתות, אחי סבא-רבא' },
+    5: { title: 'דור 5 • סבא-רבא-רבא', subtitle: 'סבא וסבתא של הסבים' },
+    6: { title: 'דור 6 • אבות קדמונים', subtitle: 'ממייסדי פתח תקווה ונחלת שבעה, בוני ירושלים' },
+    7: { title: 'דור 7 • אבות קדמונים ומחדשי היישוב', subtitle: 'ממנהיגי היישוב הישן, משפחות פרוש וסלומון' },
+    8: { title: 'דור 8 • שורשי השושלת ורבני אשכנז', subtitle: 'מחדש היישוב האשכנזי (הראש"ז צורף), שושלת בעל "תוספות יום טוב"' },
     9: { title: 'דור 9 • רבני סיגט וגאוני ליטא', subtitle: 'מצוקי ארץ וראשי קהילות קודש' },
-    10: { title: 'דור 10 • אבות הדורות', subtitle: 'מנשאי תורה ויראה בדורות הקודמים' },
+    10: { title: 'דור 10 • אבות הדורות', subtitle: 'רבנים ומאורי הדור' },
     11: { title: 'דור 11 • מגדולי הדורות', subtitle: 'רבנים ומאורי הדור' },
     12: { title: 'דור 12 • שושלות החסידות וגדולי ישראל', subtitle: 'אדמו"רי קרלין-סטולין ומאורי החסידות' },
   };
@@ -182,8 +191,8 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                 {genPersons.map((p) => {
                   const branch = branchMap.get(p.branch_id);
                   const isMissingDate = !p.hebrew_day || !p.hebrew_month;
-                  const isMartyr = p.notes?.includes('הי"ד') || p.last_name?.includes('הי"ד');
-                  const suffix = isMartyr ? 'הי"ד' : (p.gender === 'female' || p.title === 'מרת' ? 'ע"ה' : 'ז"ל');
+                  const { cleanTitle, cleanFirstName, cleanLastName, honorific } = getDeceasedFormattedParts(p);
+                  const genInfo = getGenerationRelationInfo(p, userGeneration);
 
                   return (
                     <div
@@ -199,10 +208,36 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
 
                       <div>
                         {/* Top row: Relationship & Branch badge */}
-                        <div className="flex items-center justify-between gap-2 mb-2 pt-1">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-semibold bg-slate-100 text-slate-700">
-                            {p.relationship || `דור ${p.generation || 2}`}
-                          </span>
+                        <div className="flex items-center justify-between gap-2 mb-2 pt-1 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenLineage?.(p);
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold border transition cursor-pointer shadow-2xs font-serif ${
+                                genInfo.isDirect
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                                  : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-200'
+                              }`}
+                              title={`${genInfo.fullDescription} • לחץ לצפייה בשרשרת הייחוס`}
+                            >
+                              <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-600' : 'text-purple-600'}`} />
+                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                            </button>
+
+                            {isHolocaustVictim(p) && (
+                              <span 
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-black bg-amber-100 text-amber-950 border border-amber-300 shadow-2xs"
+                                title="קדוש השואה הי״ד"
+                              >
+                                <Flame className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
+                                <span>הי״ד</span>
+                              </span>
+                            )}
+                          </div>
+
                           <span 
                             className="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-bold text-white shadow-2xs"
                             style={{ backgroundColor: branch?.color || '#2563eb' }}
@@ -214,10 +249,22 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                         {/* Person Name & Title */}
                         <div className="mb-2">
                           <h3 className="text-base font-bold text-slate-900 group-hover:text-amber-700 transition-colors flex items-center gap-1.5 flex-wrap">
-                            {p.title && <span className="text-amber-700 font-semibold">{p.title}</span>}
-                            <span>{p.first_name}</span>
-                            <span>{p.last_name}</span>
-                            <span className="text-xs text-slate-400 font-normal">{suffix}</span>
+                            {cleanTitle && <span className="text-amber-700 font-semibold">{cleanTitle}</span>}
+                            <span>{cleanFirstName}</span>
+                            <span>{cleanLastName}</span>
+                            {honorific && <span className="text-xs text-slate-400 font-normal">{honorific}</span>}
+
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs font-serif ${
+                                genInfo.isDirect
+                                  ? 'bg-amber-100 text-amber-950 border-amber-300'
+                                  : 'bg-purple-100 text-purple-950 border-purple-300'
+                              }`}
+                              title={genInfo.fullDescription}
+                            >
+                              <GitCommit className={`w-2.5 h-2.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                            </span>
                           </h3>
                           {p.father_or_mother_name && (
                             <p className="text-xs text-slate-500 mt-0.5">
@@ -235,19 +282,30 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                       </div>
 
                       {/* Date Status Footer */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                         {isMissingDate ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors">
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
                             <span>ללא תאריך • לחץ להשלמה</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            <span>
-                              {formatDisplayDateWithGregorian(p.hebrew_day, p.hebrew_month, p.hebrew_year, p.gregorian_original_date)}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 font-serif">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              <span>
+                                {formatDisplayDateWithGregorian(p.hebrew_day, p.hebrew_month, p.hebrew_year, p.gregorian_original_date)}
+                              </span>
                             </span>
-                          </span>
+                            <span
+                              className={`text-[10px] font-black px-1.5 py-0.2 rounded font-serif border ${
+                                genInfo.isDirect
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : 'bg-purple-50 text-purple-900 border-purple-200'
+                              }`}
+                            >
+                              דור {genInfo.relativeGeneration}
+                            </span>
+                          </div>
                         )}
 
                         <span className="text-slate-400 group-hover:text-slate-700 transition-colors p-1 rounded-md hover:bg-slate-100">

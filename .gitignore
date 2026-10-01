@@ -39,3 +39,5 @@ personal data/
 next-env.d.ts
 
 .vercel
+
+scripts/

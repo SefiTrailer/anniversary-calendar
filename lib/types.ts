@@ -36,6 +36,8 @@ export interface DeceasedPerson {
   leap_year_preference?: 'Adar II' | 'Adar I' | 'both';
   notes?: string;
   created_at: string;
+  lineage_path?: any[];
+  geni_profile_id?: string | null;
 }
 
 export interface UserMembership {
@@ -46,6 +48,7 @@ export interface UserMembership {
   role: 'admin' | 'member';
   feed_token: string;
   selected_branch_ids: string[];
+  user_generation?: number;
 }
 
 export interface CurrentUser {

@@ -298,13 +298,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                 onChange={(e) => setGeneration(Number(e.target.value))}
                 className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
               >
-                <option value={1}>דור 1 • הורים</option>
-                <option value={2}>דור 2 • סבים, סבתות, דודים</option>
-                <option value={3}>דור 3 • סבא-רבא / סבתא-רבתא</option>
-                <option value={4}>דור 4 • סבא-רבא-רבא</option>
-                <option value={5}>דור 5 • אבות קדמונים</option>
+                <option value={2}>דור 2 • הורים ודודים</option>
+                <option value={3}>דור 3 • סבים, סבתות ואחיהם</option>
+                <option value={4}>דור 4 • סבא-רבא / סבתא-רבתא ואחיהם</option>
+                <option value={5}>דור 5 • סבא-רבא-רבא</option>
                 <option value={6}>דור 6 • אבות קדמונים</option>
                 <option value={7}>דור 7 • אבות קדמונים</option>
+                <option value={8}>דור 8 • אבות קדמונים</option>
               </select>
             </div>
           </div>

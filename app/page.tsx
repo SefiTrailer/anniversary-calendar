@@ -13,8 +13,16 @@ import { DeleteCalendarConfirmModal } from '@/components/DeleteCalendarConfirmMo
 import { GemImportModal } from '@/components/GemImportModal';
 import { FamilyTreeView } from '@/components/FamilyTreeView';
 import { MissingDatesView } from '@/components/MissingDatesView';
+import LineageModal from '@/components/LineageModal';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
-import { calculateUpcomingYahrzeits, formatAnniversaryYearText, getGoogleCalendarDirectAddUrl } from '@/lib/hebrew-calendar';
+import {
+  calculateUpcomingYahrzeits,
+  formatAnniversaryYearText,
+  getGoogleCalendarDirectAddUrl,
+  getDeceasedFullName,
+  formatHebrewDateString,
+  getGenerationRelationInfo,
+} from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
 import {
@@ -38,6 +46,7 @@ import {
   Download,
   FolderTree,
   List,
+  GitCommit,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -54,6 +63,13 @@ export default function HomePage() {
   const [branches, setBranches] = useState<FamilyBranch[]>([]);
   const [deceased, setDeceased] = useState<DeceasedPerson[]>([]);
   const [membership, setMembership] = useState<UserMembership | null>(null);
+  const [userGeneration, setUserGeneration] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ner_neshama_user_generation');
+      if (saved !== null && !isNaN(Number(saved))) return Number(saved);
+    }
+    return 1;
+  });
 
   // Shared View State (When opened via ?share=true&calendarId=...&branches=...)
   const [sharedViewData, setSharedViewData] = useState<{
@@ -76,6 +92,7 @@ export default function HomePage() {
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
   const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
+  const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
 
   const [loading, setLoading] = useState(true);
 
@@ -190,13 +207,23 @@ export default function HomePage() {
     };
   }, []);
 
-  // Today's Hebrew date string
-  const todayHebrewDate = useMemo(() => {
+  // Today's Hebrew & Gregorian date strings
+  const { todayHebrewDate, todayGregorianDate } = useMemo(() => {
     try {
-      const hd = new HDate();
-      return hd.render('he');
+      const now = new Date();
+      const hd = new HDate(now);
+      const hebStr = formatHebrewDateString(hd.getDate(), hd.getMonthName(), hd.getFullYear());
+      const gregStr = now.toLocaleDateString('he-IL', {
+        day: 'numeric',
+        month: 'numeric',
+        year: 'numeric',
+      });
+      return {
+        todayHebrewDate: hebStr || hd.render('he'),
+        todayGregorianDate: gregStr,
+      };
     } catch {
-      return '';
+      return { todayHebrewDate: '', todayGregorianDate: '' };
     }
   }, []);
 
@@ -253,6 +280,12 @@ export default function HomePage() {
         setDeceased(data.deceased || []);
         if (data.membership) {
           setMembership(data.membership);
+          if (typeof data.membership.user_generation === 'number') {
+            setUserGeneration(data.membership.user_generation);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('ner_neshama_user_generation', String(data.membership.user_generation));
+            }
+          }
         }
       }
     } catch (err) {
@@ -430,6 +463,30 @@ export default function HomePage() {
     });
   };
 
+  const handleUpdateUserGeneration = async (newGen: number) => {
+    setUserGeneration(newGen);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ner_neshama_user_generation', String(newGen));
+    }
+    if (membership && currentCalendar) {
+      const updated = { ...membership, user_generation: newGen };
+      setMembership(updated);
+      try {
+        await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save_membership',
+            payload: { membership: updated },
+            userEmail: currentUser?.email,
+          }),
+        });
+      } catch (err) {
+        console.error('Failed to save user generation to membership:', err);
+      }
+    }
+  };
+
   const handleSignOut = () => {
     localStorage.removeItem('ner_neshama_user');
     supabase.auth.signOut();
@@ -480,6 +537,20 @@ export default function HomePage() {
     return deceased.filter(p => !p.hebrew_day || !p.hebrew_month).length;
   }, [deceased]);
 
+  // Check for direct lineage link in URL (?lineage=[id])
+  useEffect(() => {
+    if (typeof window !== 'undefined' && targetDeceased.length > 0) {
+      const sp = new URLSearchParams(window.location.search);
+      const lineageId = sp.get('lineage');
+      if (lineageId) {
+        const found = targetDeceased.find((p) => p.id === lineageId);
+        if (found) {
+          setLineagePerson(found);
+        }
+      }
+    }
+  }, [targetDeceased]);
+
   const webcalFeedUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
     const host = typeof window !== 'undefined' ? window.location.host : 'yahrzeit-calendar.vercel.app';
@@ -528,7 +599,10 @@ export default function HomePage() {
         currentUser={currentUser}
         membership={membership}
         isAdmin={isAdmin}
+        userGeneration={userGeneration}
+        onUpdateUserGeneration={handleUpdateUserGeneration}
         todayHebrewDate={todayHebrewDate}
+        todayGregorianDate={todayGregorianDate}
       />
 
       {/* Main Page Body */}
@@ -563,7 +637,7 @@ export default function HomePage() {
                 <div className="space-y-3 max-w-2xl">
                   <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
                     <Flame className="w-3.5 h-3.5 text-amber-400" />
-                    <span>היום: {todayHebrewDate}</span>
+                    <span>היום: {todayHebrewDate}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
                   </div>
 
                   <h2 className="text-2xl sm:text-4xl font-black font-serif text-slate-50">
@@ -614,42 +688,91 @@ export default function HomePage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => (
-                    <div
-                      key={person.id}
-                      className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-lg font-black text-slate-900 block leading-tight font-serif">
-                            {person.first_name} {person.last_name} ז״ל
-                          </span>
-                          {person.father_or_mother_name && (
-                            <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                              לעילוי נשמת {person.father_or_mother_name}
-                            </span>
-                          )}
-                          <span className="text-sm font-bold text-amber-900 block mt-1.5 font-serif">
-                            {upcoming.hebrewDateStr} &bull;{' '}
-                            {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                              weekday: 'short',
-                              day: 'numeric',
-                              month: 'numeric',
-                            })}
+                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
+                    const genInfo = getGenerationRelationInfo(person, userGeneration);
+                    return (
+                      <div
+                        key={person.id}
+                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="w-full">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-lg font-black text-slate-900 leading-tight font-serif">
+                                {getDeceasedFullName(person)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setLineagePerson(person)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
+                                  genInfo.isDirect
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                                    : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
+                                }`}
+                                title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                              >
+                                <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                                <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                              </button>
+                            </div>
+                            {person.father_or_mother_name && (
+                              <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
+                                לעילוי נשמת {person.father_or_mother_name}
+                              </span>
+                            )}
+                            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
+                              <span className="text-sm font-bold text-amber-900 block font-serif">
+                                {upcoming.hebrewDateStr} &bull;{' '}
+                                {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'numeric',
+                                })}
+                              </span>
+                              <span
+                                className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
+                                  genInfo.isDirect
+                                    ? 'bg-amber-100 text-amber-950 border-amber-300/80'
+                                    : 'bg-purple-100 text-purple-950 border-purple-300'
+                                }`}
+                                title={genInfo.fullDescription}
+                              >
+                                דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
+                              </span>
+                            </div>
+                          </div>
+
+                          <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                            {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
                           </span>
                         </div>
 
-                        <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
-                          {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
-                        </span>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-500 font-serif">
-                          {formatAnniversaryYearText(upcoming.yearsPassed)}
-                        </span>
-                        <a
-                          href={getGoogleCalendarDirectAddUrl(person, upcoming)}
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 font-serif">
+                              {formatAnniversaryYearText(upcoming.yearsPassed)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setLineagePerson(person)}
+                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer font-serif ${
+                                genInfo.isDirect
+                                  ? 'text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-200/80'
+                                  : 'text-purple-800 hover:text-purple-950 bg-purple-100/70 hover:bg-purple-200/80'
+                              }`}
+                              title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                            >
+                              <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-600' : 'text-purple-600'}`} />
+                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                            </button>
+                          </div>
+                          <a
+                          href={getGoogleCalendarDirectAddUrl(
+                            person,
+                            upcoming,
+                            sharedViewData.branches.find(b => b.id === person.branch_id)?.name,
+                            typeof window !== 'undefined' ? window.location.origin : ''
+                          )}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
@@ -659,7 +782,8 @@ export default function HomePage() {
                         </a>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             )}
@@ -671,6 +795,7 @@ export default function HomePage() {
               isAdmin={false}
               onEdit={() => {}}
               onDelete={async () => {}}
+              onOpenLineage={setLineagePerson}
             />
           </div>
         )}
@@ -686,10 +811,10 @@ export default function HomePage() {
               <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
               <div className="relative z-10 max-w-3xl mx-auto space-y-6">
-                {/* Hebrew Date Pill */}
+                {/* Hebrew & Gregorian Date Pill */}
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
                   <Flame className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span>היום: {todayHebrewDate || 'לוח השנה העברי'}</span>
+                  <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
                 </div>
 
                 <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight font-serif text-slate-50">
@@ -828,7 +953,7 @@ export default function HomePage() {
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
                   <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>היום: {todayHebrewDate}</span>
+                  <span>היום: {todayHebrewDate}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-black font-serif text-slate-50">
                   מרכז היומנים המשפחתיים שלי
@@ -1011,10 +1136,10 @@ export default function HomePage() {
 
               <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                 <div className="space-y-3 max-w-2xl">
-                  {/* Hebrew Date Pill */}
+                  {/* Hebrew & Gregorian Date Pill */}
                   <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
                     <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                    <span>היום: {todayHebrewDate || 'לוח השנה העברי'}</span>
+                    <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
                   </div>
 
                   <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
@@ -1156,42 +1281,91 @@ export default function HomePage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => (
-                    <div
-                      key={person.id}
-                      className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-lg font-black text-slate-900 block leading-tight font-serif">
-                            {person.title ? `${person.title} ` : ''}{person.first_name} {person.last_name} ז״ל
-                          </span>
-                          {person.father_or_mother_name && (
-                            <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                              לעילוי נשמת {person.father_or_mother_name}
-                            </span>
-                          )}
-                          <span className="text-sm font-bold text-amber-900 block mt-1.5 font-serif">
-                            {upcoming.hebrewDateStr} &bull;{' '}
-                            {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                              weekday: 'short',
-                              day: 'numeric',
-                              month: 'numeric',
-                            })}
+                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
+                    const genInfo = getGenerationRelationInfo(person, userGeneration);
+                    return (
+                      <div
+                        key={person.id}
+                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="w-full">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-lg font-black text-slate-900 leading-tight font-serif">
+                                {getDeceasedFullName(person)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setLineagePerson(person)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
+                                  genInfo.isDirect
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                                    : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
+                                }`}
+                                title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                              >
+                                <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                                <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                              </button>
+                            </div>
+                            {person.father_or_mother_name && (
+                              <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
+                                לעילוי נשמת {person.father_or_mother_name}
+                              </span>
+                            )}
+                            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
+                              <span className="text-sm font-bold text-amber-900 block font-serif">
+                                {upcoming.hebrewDateStr} &bull;{' '}
+                                {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'numeric',
+                                })}
+                              </span>
+                              <span
+                                className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
+                                  genInfo.isDirect
+                                    ? 'bg-amber-100 text-amber-950 border-amber-300/80'
+                                    : 'bg-purple-100 text-purple-950 border-purple-300'
+                                }`}
+                                title={genInfo.fullDescription}
+                              >
+                                דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
+                              </span>
+                            </div>
+                          </div>
+
+                          <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                            {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
                           </span>
                         </div>
 
-                        <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
-                          {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
-                        </span>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-500 font-serif">
-                          {formatAnniversaryYearText(upcoming.yearsPassed)}
-                        </span>
-                        <a
-                          href={getGoogleCalendarDirectAddUrl(person, upcoming)}
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-500 font-serif">
+                              {formatAnniversaryYearText(upcoming.yearsPassed)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setLineagePerson(person)}
+                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer font-serif ${
+                                genInfo.isDirect
+                                  ? 'text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-200/80'
+                                  : 'text-purple-800 hover:text-purple-950 bg-purple-100/70 hover:bg-purple-200/80'
+                              }`}
+                              title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                            >
+                              <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-600' : 'text-purple-600'}`} />
+                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                            </button>
+                          </div>
+                          <a
+                          href={getGoogleCalendarDirectAddUrl(
+                            person,
+                            upcoming,
+                            branches.find(b => b.id === person.branch_id)?.name,
+                            typeof window !== 'undefined' ? window.location.origin : ''
+                          )}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
@@ -1201,7 +1375,8 @@ export default function HomePage() {
                         </a>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             )}
@@ -1212,11 +1387,13 @@ export default function HomePage() {
                 deceased={deceased}
                 branches={branches}
                 isAdmin={isAdmin}
+                userGeneration={userGeneration}
                 onEdit={(person) => {
                   setEditingDeceased(person);
                   setIsAddModalOpen(true);
                 }}
                 onDelete={handleDeleteDeceased}
+                onOpenLineage={setLineagePerson}
               />
             )}
 
@@ -1224,6 +1401,7 @@ export default function HomePage() {
               <FamilyTreeView
                 deceased={deceased}
                 branches={branches}
+                userGeneration={userGeneration}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
                   setIsAddModalOpen(true);
@@ -1232,6 +1410,7 @@ export default function HomePage() {
                   setEditingDeceased(initial as any);
                   setIsAddModalOpen(true);
                 }}
+                onOpenLineage={setLineagePerson}
               />
             )}
 
@@ -1239,10 +1418,12 @@ export default function HomePage() {
               <MissingDatesView
                 deceased={deceased}
                 branches={branches}
+                userGeneration={userGeneration}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
                   setIsAddModalOpen(true);
                 }}
+                onOpenLineage={setLineagePerson}
               />
             )}
           </div>
@@ -1337,6 +1518,21 @@ export default function HomePage() {
         onClose={() => setIsNewCalendarModalOpen(false)}
         onCreateCalendar={handleCreateCalendar}
         currentUserName={currentUser?.name || 'משתמש'}
+      />
+
+      <LineageModal
+        isOpen={Boolean(lineagePerson)}
+        onClose={() => {
+          setLineagePerson(null);
+          if (typeof window !== 'undefined' && window.location.search.includes('lineage=')) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('lineage');
+            window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+          }
+        }}
+        person={lineagePerson}
+        currentUser={currentUser}
+        userGeneration={userGeneration}
       />
     </div>
   );

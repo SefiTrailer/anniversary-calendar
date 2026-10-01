@@ -2,18 +2,23 @@
 
 import React, { useState } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
-import { AlertTriangle, Calendar, PlusCircle, Search, Edit3, CheckCircle2, Bookmark } from 'lucide-react';
+import { getDeceasedFormattedParts, getGenerationRelationInfo } from '@/lib/hebrew-calendar';
+import { AlertTriangle, Calendar, PlusCircle, Search, Edit3, CheckCircle2, Bookmark, GitCommit } from 'lucide-react';
 
 interface MissingDatesViewProps {
   deceased: DeceasedPerson[];
   branches: FamilyBranch[];
+  userGeneration?: number;
   onEditDeceased: (deceased: DeceasedPerson) => void;
+  onOpenLineage?: (person: DeceasedPerson) => void;
 }
 
 export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
   deceased,
   branches,
+  userGeneration = 1,
   onEditDeceased,
+  onOpenLineage,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState('all');
@@ -114,8 +119,8 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(p => {
             const branch = branchMap.get(p.branch_id);
-            const isMartyr = p.notes?.includes('הי"ד') || p.last_name?.includes('הי"ד');
-            const suffix = isMartyr ? 'הי"ד' : (p.gender === 'female' || p.title === 'מרת' ? 'ע"ה' : 'ז"ל');
+            const { cleanTitle, cleanFirstName, cleanLastName, honorific } = getDeceasedFormattedParts(p);
+            const genInfo = getGenerationRelationInfo(p, userGeneration);
 
             return (
               <div
@@ -128,12 +133,25 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
                 />
 
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-2xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                      {p.relationship || `דור ${p.generation || 2}`}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenLineage?.(p);
+                      }}
+                      className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border transition cursor-pointer flex items-center gap-1 shadow-2xs font-serif ${
+                        genInfo.isDirect
+                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                          : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border-purple-300'
+                      }`}
+                      title={`${genInfo.fullDescription} • לחץ לצפייה בשרשרת הייחוס המלאה`}
+                    >
+                      <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                    </button>
                     <span 
-                      className="px-2 py-0.5 rounded-full text-2xs font-bold text-white"
+                      className="px-2 py-0.5 rounded-full text-2xs font-bold text-white shadow-2xs"
                       style={{ backgroundColor: branch?.color || '#2563eb' }}
                     >
                       {branch?.name}
@@ -141,10 +159,22 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
                   </div>
 
                   <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-1.5 flex-wrap">
-                    {p.title && <span className="text-amber-800">{p.title}</span>}
-                    <span>{p.first_name}</span>
-                    <span>{p.last_name}</span>
-                    <span className="text-xs text-slate-400 font-normal">{suffix}</span>
+                    {cleanTitle && <span className="text-amber-800">{cleanTitle}</span>}
+                    <span>{cleanFirstName}</span>
+                    <span>{cleanLastName}</span>
+                    {honorific && <span className="text-xs text-slate-400 font-normal">{honorific}</span>}
+
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs font-serif ${
+                        genInfo.isDirect
+                          ? 'bg-amber-100 text-amber-950 border-amber-300'
+                          : 'bg-purple-100 text-purple-950 border-purple-300'
+                      }`}
+                      title={genInfo.fullDescription}
+                    >
+                      <GitCommit className={`w-2.5 h-2.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                    </span>
                   </h3>
 
                   {p.father_or_mother_name && (

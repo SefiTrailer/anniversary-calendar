@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ical, { ICalCalendarMethod } from 'ical-generator';
 import { DataStore } from '@/lib/data-store';
-import { calculateUpcomingYahrzeits, formatDisplayDateWithGregorian, formatHebrewDateString } from '@/lib/hebrew-calendar';
+import {
+  calculateUpcomingYahrzeits,
+  formatDisplayDateWithGregorian,
+  formatHebrewDateString,
+  getDeceasedFullName,
+  formatLineageChainText,
+  getGenerationRelationInfo,
+} from '@/lib/hebrew-calendar';
 
 export async function GET(
   request: NextRequest,
@@ -43,8 +50,7 @@ export async function GET(
     const branchName = branchMap.get(dec.branch_id) || 'כללי';
     const upcomingList = calculateUpcomingYahrzeits(dec, 10);
 
-    const titlePrefix = dec.title ? `${dec.title} ` : '';
-    const displayName = `${titlePrefix}${dec.first_name} ${dec.last_name}`.trim();
+    const fullDisplayName = getDeceasedFullName(dec);
     const parentName = dec.father_or_mother_name ? ` (${dec.father_or_mother_name})` : '';
     const originalDateFormatted = formatDisplayDateWithGregorian(
       dec.hebrew_day,
@@ -53,12 +59,11 @@ export async function GET(
       dec.gregorian_original_date
     );
 
-    const isMartyr = dec.notes?.includes('הי"ד') || dec.last_name?.includes('הי"ד');
-    const honorificSuffix = isMartyr ? 'הי"ד' : (dec.gender === 'female' || dec.title === 'מרת' ? 'ע"ה' : 'ז"ל');
-    
-    const relationLine = dec.relationship 
-      ? `קרבה לבעל היומן: ${dec.relationship}${dec.generation ? ` (דור ${dec.generation} מעל בעל היומן)` : ''}`
-      : (dec.generation ? `דור ${dec.generation} במשפחה` : '');
+    const genInfo = getGenerationRelationInfo(dec);
+    const relationLine = `קרבה לבעל היומן: ${genInfo.fullDescription}`;
+
+    const lineageChain = formatLineageChainText(dec.lineage_path);
+    const lineageUrl = `${request.nextUrl.origin}/?lineage=${dec.id}`;
 
     for (const upcoming of upcomingList) {
       // Event dates: All-day event on upcoming.gregorianDate
@@ -77,11 +82,13 @@ export async function GET(
         allDay: true,
         sequence: 1,
         stamp: new Date(),
-        summary: `יארצייט: ${displayName} ${honorificSuffix}${yearsPassedText}`,
+        summary: `יארצייט: ${fullDisplayName}${yearsPassedText}`,
         description: [
-          `יום השנה לפטירת ${displayName}${parentName} ${honorificSuffix}`,
+          `יום השנה לפטירת ${fullDisplayName}${parentName}`,
           relationLine,
-          `תאריך עברי מקורי: ${originalDateFormatted}`,
+          lineageChain ? `\n🔗 שרשרת היוחסין:\n${lineageChain}` : '',
+          `\n🔗 צפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}`,
+          `\nתאריך עברי מקורי: ${originalDateFormatted}`,
           `ענף משפחתי: ${branchName}`,
           dec.notes ? `הערות ומנהגים: ${dec.notes}` : '',
           dec.after_sunset ? 'הערה הלכתית: הפטירה אירעה לאחר צאת הכוכבים / השקיעה.' : '',
@@ -89,7 +96,7 @@ export async function GET(
           .filter(Boolean)
           .join('\n'),
         location: dec.notes?.includes('קבור') || dec.notes?.includes('מנוחת') ? dec.notes : undefined,
-        url: request.nextUrl.origin,
+        url: lineageUrl,
       });
     }
   }
