@@ -738,16 +738,6 @@ export default function HomePage() {
                                   })})
                                 </span>
                               </div>
-                              <span
-                                className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
-                                  genInfo.isDirect
-                                    ? 'bg-amber-100 text-amber-950 border-amber-300/80'
-                                    : 'bg-purple-100 text-purple-950 border-purple-300'
-                                }`}
-                                title={genInfo.fullDescription}
-                              >
-                                דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
-                              </span>
                             </div>
                           </div>
 
@@ -757,24 +747,9 @@ export default function HomePage() {
                         </div>
 
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-500 font-serif">
-                              {formatAnniversaryYearText(upcoming.yearsPassed)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setLineagePerson(person)}
-                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer font-serif ${
-                                genInfo.isDirect
-                                  ? 'text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-200/80'
-                                  : 'text-purple-800 hover:text-purple-950 bg-purple-100/70 hover:bg-purple-200/80'
-                              }`}
-                              title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                            >
-                              <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-600' : 'text-purple-600'}`} />
-                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                            </button>
-                          </div>
+                          <span className="text-[11px] font-bold text-slate-500 font-serif">
+                            {formatAnniversaryYearText(upcoming.yearsPassed)}
+                          </span>
                           <a
                           href={getGoogleCalendarDirectAddUrl(
                             person,
@@ -1337,16 +1312,6 @@ export default function HomePage() {
                                   })})
                                 </span>
                               </div>
-                              <span
-                                className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
-                                  genInfo.isDirect
-                                    ? 'bg-amber-100 text-amber-950 border-amber-300/80'
-                                    : 'bg-purple-100 text-purple-950 border-purple-300'
-                                }`}
-                                title={genInfo.fullDescription}
-                              >
-                                דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
-                              </span>
                             </div>
                           </div>
 
@@ -1356,24 +1321,9 @@ export default function HomePage() {
                         </div>
 
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-500 font-serif">
-                              {formatAnniversaryYearText(upcoming.yearsPassed)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setLineagePerson(person)}
-                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg transition cursor-pointer font-serif ${
-                                genInfo.isDirect
-                                  ? 'text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-200/80'
-                                  : 'text-purple-800 hover:text-purple-950 bg-purple-100/70 hover:bg-purple-200/80'
-                              }`}
-                              title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                            >
-                              <GitCommit className={`w-3 h-3 ${genInfo.isDirect ? 'text-amber-600' : 'text-purple-600'}`} />
-                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                            </button>
-                          </div>
+                          <span className="text-[11px] font-bold text-slate-500 font-serif">
+                            {formatAnniversaryYearText(upcoming.yearsPassed)}
+                          </span>
                           <a
                           href={getGoogleCalendarDirectAddUrl(
                             person,

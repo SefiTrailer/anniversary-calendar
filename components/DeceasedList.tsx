@@ -612,23 +612,9 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
 
                   {/* Hebrew Date Primary, Gregorian Original in Parentheses */}
                   <div className="bg-gradient-to-r from-amber-50/70 via-amber-50/40 to-slate-50 p-3.5 rounded-2xl border border-amber-200/70 space-y-1 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-amber-900 block font-serif">
-                        תאריך פטירה מקורי:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onOpenLineage?.(person)}
-                        className={`text-xs font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs transition cursor-pointer ${
-                          genInfo.isDirect
-                            ? 'bg-amber-100 text-amber-950 border-amber-300/80 hover:bg-amber-200'
-                            : 'bg-purple-100 text-purple-950 border-purple-300 hover:bg-purple-200'
-                        }`}
-                        title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                      >
-                        דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
-                      </button>
-                    </div>
+                    <span className="text-[11px] font-bold text-amber-900 block font-serif">
+                      תאריך פטירה מקורי:
+                    </span>
                     <p className="text-base font-black text-slate-900 tracking-wide font-serif">
                       {dateDisplay}
                     </p>

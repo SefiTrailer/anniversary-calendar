@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, User, Heart, Calendar } from 'lucide-react';
+import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, ArrowLeft, User, Heart, Calendar } from 'lucide-react';
 import { DeceasedPerson } from '@/lib/types';
 import {
   getDeceasedFullName,
@@ -26,12 +26,7 @@ interface LineageModalProps {
   userGeneration?: number;
 }
 
-function getChildConnector(stepName: string, stepRelation?: string): 'בן' | 'בת' {
-  const femaleWords = [
-    'חיה', 'גולדה', 'לאה', 'שרה', 'רבקה', 'רחל', 'מרים', 'חנה', 'מלכה', 'בינה',
-    'דבורה', 'אסתר', 'פייגא', 'גיטל', 'צפורה', 'מרגית', 'רונית', 'בלה', 'פרומה',
-    'ליבה', 'בריינה', 'שפרינצה', 'שיינדל', 'הינדא', 'פריידא', 'טויבא', 'מרגלא', 'הענא'
-  ];
+function getStepGender(stepName: string, stepRelation?: string): 'male' | 'female' {
   const rel = stepRelation || '';
   if (
     rel.includes('אם') ||
@@ -39,16 +34,40 @@ function getChildConnector(stepName: string, stepRelation?: string): 'בן' | '�
     rel.includes('דודה') ||
     rel.includes('אחות') ||
     rel.includes('בת') ||
+    rel.includes('אישה') ||
+    rel.includes('אשת') ||
     stepName.includes('מרת') ||
-    stepName.includes('הרבנית')
+    stepName.includes('הרבנית') ||
+    stepName.includes('אשת') ||
+    stepName.includes('לבית') ||
+    stepName.includes('בת ')
   ) {
-    return 'בת';
+    return 'female';
   }
-  const words = stepName.split(/[\s\-()]+/);
-  if (words.some(w => femaleWords.includes(w))) {
-    return 'בת';
+
+  const femaleNames = new Set([
+    'חיה', 'גולדה', 'לאה', 'שרה', 'שרלה', "שרל'ה", 'רבקה', 'רחל', 'מרים', 'חנה', 'מלכה', 'בינה', 'עטל',
+    'דבורה', 'אסתר', 'פייגא', 'גיטל', 'צפורה', 'ציפורה', 'מרגית', 'רונית', 'בלה', 'פרומה',
+    'ליבה', 'בריינה', 'שפרינצה', 'שיינדל', 'הינדא', 'הינדע', 'פריידא', 'טויבא', 'מרגלא', 'הענא',
+    'איטה', 'קריינדל', 'יוסטא', 'נעכע', 'חאסע', 'דרייזל', 'דינה', 'בתיה', 'רחמה', 'רוחמה',
+    'שפרינצא', 'רייזל', 'פערל', 'מינדל', 'דובריש', 'ביילא', 'רייכלא', 'סלאווה', 'טאבע',
+    'זלאטא', 'שבע', 'הנציא', 'יוכבד', 'רוזה', 'שפרה', 'שושנה', 'בלומא', 'יאכנט', 'סירקה',
+    'Chaya', 'Sara', 'Sarah', 'Golda', 'Leah', 'Rivka', 'Rachel', 'Miriam', 'Chana', 'Malka',
+    'Bina', 'Dvora', 'Esther', 'Feiga', 'Gitel', 'Tzipora', 'Bella', 'Fruma', 'Maria', 'Klara',
+    'Ruchla', 'Mindla', 'Cyrla', 'Frajdla', 'Rajzla', 'Ita', 'Marjem', 'Toba', 'Dobra', 'Laja',
+    'Szajndla', 'Dwojra', 'Sura', 'Hana', 'Rywka', 'Sirke', 'Dreizel', 'Jachent'
+  ]);
+
+  const cleanWords = stepName.replace(/["״׳'״()[\].,\-]/g, ' ').split(/\s+/).filter(Boolean);
+  for (const w of cleanWords) {
+    if (femaleNames.has(w)) return 'female';
   }
-  return 'בן';
+
+  return 'male';
+}
+
+function getChildConnector(stepName: string, stepRelation?: string): 'בן' | 'בת' {
+  return getStepGender(stepName, stepRelation) === 'female' ? 'בת' : 'בן';
 }
 
 export default function LineageModal({
@@ -187,14 +206,58 @@ export default function LineageModal({
           </div>
 
           {/* Full Lineage Verbal Chain Banner ("בן אחרי בן או בת") */}
-          <div className="bg-gradient-to-r from-amber-50 via-amber-100/50 to-white p-4 rounded-2xl border border-amber-300 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 mb-1.5 font-serif">
-              <GitCommit className="w-4 h-4 text-amber-700" />
-              <span>נוסח הייחוס המלא (בן אחרי בן / בת):</span>
+          <div className="bg-gradient-to-r from-amber-50/80 via-white to-amber-50/80 p-4 rounded-2xl border border-amber-300 shadow-2xs">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 font-serif">
+                <GitCommit className="w-4 h-4 text-amber-700" />
+                <span>נוסח הייחוס המלא (בן אחרי בן / בת):</span>
+              </div>
+              <div className="flex items-center gap-3 text-2xs font-bold font-serif">
+                <span className="inline-flex items-center gap-1 text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span>בן (זכר)</span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span>בת (נקבה)</span>
+                </span>
+              </div>
             </div>
-            <p className="text-sm sm:text-base font-black text-slate-900 font-serif leading-relaxed">
-              {chainSentence}
-            </p>
+
+            {/* Interactive / visual flow of steps */}
+            <div className="flex items-center flex-wrap gap-1.5 pt-1.5 pb-1">
+              {rawPath.map((step, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === rawPath.length - 1;
+                const prevStep = idx > 0 ? rawPath[idx - 1] : null;
+                const prevGender = prevStep ? getStepGender(prevStep.name, prevStep.relation) : 'male';
+                const isSon = prevGender === 'male';
+
+                return (
+                  <React.Fragment key={`banner-${step.gen}-${idx}`}>
+                    {prevStep && (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-black shadow-2xs border ${
+                        isSon
+                          ? 'bg-blue-100 text-blue-900 border-blue-300'
+                          : 'bg-rose-100 text-rose-900 border-rose-300'
+                      }`}>
+                        <ArrowLeft className={`w-3 h-3 ${isSon ? 'text-blue-600' : 'text-rose-600'}`} />
+                        <span>{isSon ? 'בן של' : 'בת של'}</span>
+                      </span>
+                    )}
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-serif shadow-2xs border ${
+                      isLast
+                        ? 'bg-amber-100 text-amber-950 border-amber-400 font-black ring-2 ring-amber-300'
+                        : isFirst
+                        ? 'bg-blue-50 text-blue-950 border-blue-300 font-bold'
+                        : 'bg-white text-slate-800 border-slate-200 font-bold'
+                    }`}>
+                      <span>{step.name}</span>
+                    </span>
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
 
           {/* Non-Direct Ancestor Notice */}
@@ -212,7 +275,8 @@ export default function LineageModal({
             {rawPath.map((step, idx) => {
               const isFirst = idx === 0;
               const isLast = idx === rawPath.length - 1;
-              const connector = getChildConnector(step.name, step.relation);
+              const stepGender = getStepGender(step.name, step.relation);
+              const isSon = stepGender === 'male';
 
               return (
                 <div key={`${step.gen}-${idx}`}>
@@ -225,7 +289,9 @@ export default function LineageModal({
                           ? 'bg-blue-600 text-white ring-4 ring-blue-100'
                           : isLast
                           ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-white ring-4 ring-amber-100 scale-105 shadow-md'
-                          : 'bg-white text-slate-700 border-2 border-amber-300 group-hover:border-amber-500'
+                          : isSon
+                          ? 'bg-blue-50 text-blue-900 border-2 border-blue-300 group-hover:border-blue-500'
+                          : 'bg-rose-50 text-rose-900 border-2 border-rose-300 group-hover:border-rose-500'
                       }`}
                     >
                       {isFirst ? (
@@ -244,7 +310,9 @@ export default function LineageModal({
                           ? 'bg-gradient-to-r from-amber-50 via-amber-100/60 to-white border-2 border-amber-400 shadow-xs'
                           : isFirst
                           ? 'bg-blue-50/70 border border-blue-200'
-                          : 'bg-white border border-slate-200/90 hover:border-amber-300'
+                          : isSon
+                          ? 'bg-white border border-slate-200/90 hover:border-blue-300'
+                          : 'bg-white border border-slate-200/90 hover:border-rose-300'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -254,7 +322,9 @@ export default function LineageModal({
                               ? 'bg-amber-600 text-white'
                               : isFirst
                               ? 'bg-blue-600 text-white'
-                              : 'bg-slate-100 text-slate-700'
+                              : isSon
+                              ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                              : 'bg-rose-100 text-rose-900 border border-rose-200'
                           }`}
                         >
                           {step.relation}
@@ -301,11 +371,15 @@ export default function LineageModal({
 
                   {/* Vertical Connector with "בן של" / "בת של" Badge */}
                   {!isLast && (
-                    <div className="flex items-center gap-2 my-1 mr-4">
-                      <div className="w-0.5 h-6 bg-gradient-to-b from-amber-400 to-amber-300" />
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-950 border border-amber-300 shadow-2xs font-serif">
-                        <ArrowDown className="w-3 h-3 text-amber-700" />
-                        <span>{connector} של</span>
+                    <div className="flex items-center gap-2 my-1.5 mr-4">
+                      <div className={`w-0.5 h-7 ${isSon ? 'bg-blue-400' : 'bg-rose-400'}`} />
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black shadow-2xs font-serif border ${
+                        isSon
+                          ? 'bg-blue-100 text-blue-950 border-blue-300'
+                          : 'bg-rose-100 text-rose-950 border-rose-300'
+                      }`}>
+                        <ArrowDown className={`w-3 h-3 ${isSon ? 'text-blue-700' : 'text-rose-700'}`} />
+                        <span>{isSon ? 'בן של' : 'בת של'}</span>
                       </span>
                     </div>
                   )}
