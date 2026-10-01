@@ -97,7 +97,7 @@ export function formatHebrewYear(year?: number | null): string {
   if (!year || isNaN(year) || year <= 0) return '';
   try {
     // gematriya for Hebrew year (5742 % 1000 = 742 -> תשמ״ב)
-    const shortYear = year % 1000;
+    const shortYear = year >= 1000 ? year % 1000 : year;
     return gematriya(shortYear);
   } catch {
     return String(year);
@@ -173,7 +173,7 @@ export function formatDisplayDateWithGregorian(
     return 'ללא תאריך (להשלמה)';
   }
 
-  const hebFormatted = formatHebrewDateString(hebrew_day, hebrew_month, hebrew_year || 5700);
+  const hebFormatted = formatHebrewDateString(hebrew_day, hebrew_month, hebrew_year);
   if (!gregorian_original_date) {
     return hebFormatted;
   }

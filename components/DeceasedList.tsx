@@ -662,17 +662,18 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between text-slate-700">
-                        <p className="font-bold text-slate-900 font-serif text-sm">
-                          {upcoming.hebrewDateStr} &bull;{' '}
-                          <span className="font-medium text-xs font-sans">
-                            {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                              weekday: 'short',
-                              year: 'numeric',
-                              month: 'numeric',
+                        <div>
+                          <p className="font-bold text-slate-900 font-serif text-sm">
+                            {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                          </p>
+                          <p className="text-[11px] text-slate-500 font-sans">
+                            ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
                               day: 'numeric',
-                            })}
-                          </span>
-                        </p>
+                              month: 'numeric',
+                              year: 'numeric',
+                            })})
+                          </p>
+                        </div>
                         {daysUntil >= 0 && (
                           <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 shrink-0">
                             <Clock className="w-3 h-3" />

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
-import { getDeceasedFormattedParts, getGenerationRelationInfo } from '@/lib/hebrew-calendar';
+import { getDeceasedFormattedParts, getGenerationRelationInfo, HEBREW_MONTHS_TRANSLATION } from '@/lib/hebrew-calendar';
 import { AlertTriangle, Calendar, PlusCircle, Search, Edit3, CheckCircle2, Bookmark, GitCommit } from 'lucide-react';
 
 interface MissingDatesViewProps {
@@ -190,7 +190,7 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
                       <span>מידע ידוע כעת:</span>
                     </div>
                     <p className="text-2xs leading-relaxed text-slate-700">
-                      {p.notes || (p.hebrew_month ? `ידוע שנפטר/ה בחודש ${p.hebrew_month}` : 'טרם תועדו פרטים.')}
+                      {p.notes || (p.hebrew_month ? `ידוע שנפטר/ה בחודש ${HEBREW_MONTHS_TRANSLATION[p.hebrew_month] || p.hebrew_month}` : 'טרם תועדו פרטים.')}
                     </p>
                   </div>
                 </div>

@@ -212,14 +212,17 @@ export default function HomePage() {
     try {
       const now = new Date();
       const hd = new HDate(now);
-      const hebStr = formatHebrewDateString(hd.getDate(), hd.getMonthName(), hd.getFullYear());
+      const dayNames = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'];
+      const dayOfWeek = dayNames[now.getDay()];
+      const hebDateOnly = formatHebrewDateString(hd.getDate(), hd.getMonthName(), hd.getFullYear()) || hd.renderGematriya(true);
+      const hebStr = `${dayOfWeek}, ${hebDateOnly}`;
       const gregStr = now.toLocaleDateString('he-IL', {
         day: 'numeric',
         month: 'numeric',
         year: 'numeric',
       });
       return {
-        todayHebrewDate: hebStr || hd.render('he'),
+        todayHebrewDate: hebStr,
         todayGregorianDate: gregStr,
       };
     } catch {
@@ -637,7 +640,7 @@ export default function HomePage() {
                 <div className="space-y-3 max-w-2xl">
                   <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
                     <Flame className="w-3.5 h-3.5 text-amber-400" />
-                    <span>היום: {todayHebrewDate}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
+                    <span>היום: {todayHebrewDate}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
                   </div>
 
                   <h2 className="text-2xl sm:text-4xl font-black font-serif text-slate-50">
@@ -721,14 +724,18 @@ export default function HomePage() {
                               </span>
                             )}
                             <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
-                              <span className="text-sm font-bold text-amber-900 block font-serif">
-                                {upcoming.hebrewDateStr} &bull;{' '}
-                                {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                                  weekday: 'short',
-                                  day: 'numeric',
-                                  month: 'numeric',
-                                })}
-                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-bold text-amber-900 block font-serif">
+                                  {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                                </span>
+                                <span className="text-[11px] text-slate-500 font-sans">
+                                  ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                    day: 'numeric',
+                                    month: 'numeric',
+                                    year: 'numeric',
+                                  })})
+                                </span>
+                              </div>
                               <span
                                 className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
                                   genInfo.isDirect
@@ -814,7 +821,7 @@ export default function HomePage() {
                 {/* Hebrew & Gregorian Date Pill */}
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
                   <Flame className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
+                  <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
                 </div>
 
                 <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight font-serif text-slate-50">
@@ -953,7 +960,7 @@ export default function HomePage() {
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
                   <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>היום: {todayHebrewDate}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
+                  <span>היום: {todayHebrewDate}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-black font-serif text-slate-50">
                   מרכז היומנים המשפחתיים שלי
@@ -1139,7 +1146,7 @@ export default function HomePage() {
                   {/* Hebrew & Gregorian Date Pill */}
                   <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
                     <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                    <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` • ${todayGregorianDate}` : ''}</span>
+                    <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
                   </div>
 
                   <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
@@ -1314,14 +1321,18 @@ export default function HomePage() {
                               </span>
                             )}
                             <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
-                              <span className="text-sm font-bold text-amber-900 block font-serif">
-                                {upcoming.hebrewDateStr} &bull;{' '}
-                                {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                                  weekday: 'short',
-                                  day: 'numeric',
-                                  month: 'numeric',
-                                })}
-                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-bold text-amber-900 block font-serif">
+                                  {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                                </span>
+                                <span className="text-[11px] text-slate-500 font-sans">
+                                  ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                    day: 'numeric',
+                                    month: 'numeric',
+                                    year: 'numeric',
+                                  })})
+                                </span>
+                              </div>
                               <span
                                 className={`text-[11px] font-black px-2 py-0.5 rounded-md font-serif border shadow-2xs ${
                                   genInfo.isDirect

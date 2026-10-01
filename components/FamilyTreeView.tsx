@@ -303,7 +303,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                                   : 'bg-purple-50 text-purple-900 border-purple-200'
                               }`}
                             >
-                              דור {genInfo.relativeGeneration}
+                              דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
                             </span>
                           </div>
                         )}
