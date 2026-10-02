@@ -586,21 +586,6 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                       {honorific && (
                         <span className="text-sm font-extrabold text-slate-400 font-serif">{honorific}</span>
                       )}
-
-                      {/* Generation Badge directly next to the name */}
-                      <button
-                        type="button"
-                        onClick={() => onOpenLineage?.(person)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer font-serif ${
-                          genInfo.isDirect
-                            ? 'bg-amber-100/90 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                            : 'bg-purple-100/90 hover:bg-purple-200 text-purple-950 border border-purple-300'
-                        }`}
-                        title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                      >
-                        <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                        <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                      </button>
                     </div>
                     {person.father_or_mother_name && (
                       <p className="text-xs text-slate-600 font-semibold mt-1 flex items-center gap-1 font-serif">
