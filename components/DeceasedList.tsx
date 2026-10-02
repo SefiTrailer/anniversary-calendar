@@ -9,6 +9,7 @@ import {
   getGoogleCalendarDirectAddUrl,
   getDeceasedFormattedParts,
   getGenerationRelationInfo,
+  formatLeiluyNishmat,
 } from '@/lib/hebrew-calendar';
 import {
   Search,
@@ -460,7 +461,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredAndSorted.map(({ person, upcoming, daysUntil }) => {
             const branch = branchMap.get(person.branch_id);
-            const { cleanTitle, cleanFirstName, cleanLastName, honorific, fullName } = getDeceasedFormattedParts(person);
+            const { cleanTitle, showTitle, cleanFirstName, cleanLastName, honorific, fullName } = getDeceasedFormattedParts(person);
             const dateDisplay = formatDisplayDateWithGregorian(
               person.hebrew_day,
               person.hebrew_month,
@@ -571,26 +572,28 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
 
                   {/* Deceased Names Header */}
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {cleanTitle && (
-                        <span className="text-xl font-bold text-amber-800/90 font-serif">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight font-serif leading-snug">
+                      {showTitle && (
+                        <span className="text-xl font-bold text-amber-800/90 ml-1.5 inline">
                           {cleanTitle}
                         </span>
                       )}
-                      <h3 className="text-2xl font-black text-slate-900 tracking-tight font-serif">
-                        {cleanFirstName}
-                      </h3>
-                      <span className="text-2xl font-black text-blue-950 tracking-tight font-serif">
-                        {cleanLastName}
-                      </span>
-                      {honorific && (
-                        <span className="text-sm font-extrabold text-slate-400 font-serif">{honorific}</span>
+                      <span className="inline">{cleanFirstName}</span>
+                      {cleanLastName && (
+                        <span className="text-blue-950 mr-1.5 inline">
+                          {' '}{cleanLastName}
+                        </span>
                       )}
-                    </div>
+                      {honorific && (
+                        <span className="text-sm font-extrabold text-slate-400 mr-2 inline-block align-middle">
+                          {honorific}
+                        </span>
+                      )}
+                    </h3>
                     {person.father_or_mother_name && (
-                      <p className="text-xs text-slate-600 font-semibold mt-1 flex items-center gap-1 font-serif">
-                        <span>לעילוי נשמת:</span>
-                        <span className="text-slate-800 font-bold">{person.father_or_mother_name}</span>
+                      <p className="text-xs text-slate-600 font-semibold mt-1.5 flex items-baseline gap-1 font-serif flex-wrap">
+                        <span className="shrink-0 text-slate-500">לעילוי נשמת:</span>
+                        <span className="text-slate-800 font-bold">{formatLeiluyNishmat(person)}</span>
                       </p>
                     )}
                   </div>

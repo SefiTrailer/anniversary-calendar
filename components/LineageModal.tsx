@@ -8,6 +8,7 @@ import {
   getDeceasedFormattedParts,
   getGenerationRelationInfo,
   formatDisplayDateWithGregorian,
+  formatLeiluyNishmat,
 } from '@/lib/hebrew-calendar';
 
 interface LineageStep {
@@ -385,7 +386,7 @@ export default function LineageModal({
                         <div className="mt-2.5 pt-2 border-t border-amber-200/80 space-y-1">
                           {person.father_or_mother_name && (
                             <p className="text-xs text-slate-700 font-serif font-bold">
-                              לעילוי נשמת: {person.father_or_mother_name}
+                              לעילוי נשמת: {formatLeiluyNishmat(person)}
                             </p>
                           )}
                           <p className="text-xs text-amber-900 font-serif font-bold flex items-center gap-1.5">

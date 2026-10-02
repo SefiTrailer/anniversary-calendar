@@ -270,6 +270,7 @@ const SAFE_HONORIFIC_PATTERN = /(?<=^|[\s,;.(])(?:זצוקללה[״"׳']ה|זצ�
 
 export interface DeceasedFormattedParts {
   cleanTitle: string;
+  showTitle: boolean;
   cleanFirstName: string;
   cleanLastName: string;
   honorific: string;
@@ -349,8 +350,6 @@ export function getDeceasedFormattedParts(person: {
       extractedHonorific = 'ע״ה';
     } else if (
       cleanTitle.includes('הגאון') ||
-      cleanTitle.includes('הרה״ח') ||
-      cleanTitle.includes('הרה"ח') ||
       cleanTitle.includes('אדמו״ר') ||
       cleanTitle.includes('אדמו"ר')
     ) {
@@ -360,18 +359,69 @@ export function getDeceasedFormattedParts(person: {
     }
   }
 
-  const prefix = cleanTitle ? `${cleanTitle} ` : '';
+  // Determine if title should be displayed separately or if it is already part of the name
+  const hasTitleInFn = Boolean(
+    cleanTitle && (
+      cleanFirstName.startsWith(cleanTitle) ||
+      cleanFirstName.startsWith('רבי ') ||
+      cleanFirstName.startsWith('ר\' ') ||
+      cleanFirstName.startsWith('ר״ ') ||
+      cleanFirstName.startsWith('הקצין רבי') ||
+      cleanFirstName.startsWith('הגאון') ||
+      cleanFirstName.startsWith('הרב ') ||
+      cleanFirstName.startsWith('מרת ') ||
+      cleanFirstName.startsWith('הקדוש') ||
+      cleanFirstName.startsWith('הקדושה') ||
+      cleanFirstName.startsWith('החסיד') ||
+      cleanFirstName.startsWith('הגה״ק') ||
+      cleanFirstName.startsWith('הגה"ק') ||
+      cleanFirstName.startsWith('אדמו״ר') ||
+      cleanFirstName.startsWith('אדמו"ר')
+    )
+  );
+  const showTitle = Boolean(cleanTitle && !hasTitleInFn);
+  const prefix = showTitle ? `${cleanTitle} ` : '';
   const fullNameWithoutTitle = `${cleanFirstName} ${cleanLastName} ${extractedHonorific}`.trim();
   const fullName = `${prefix}${cleanFirstName} ${cleanLastName} ${extractedHonorific}`.trim();
 
   return {
     cleanTitle,
+    showTitle,
     cleanFirstName,
     cleanLastName,
     honorific: extractedHonorific,
     fullName,
     fullNameWithoutTitle,
   };
+}
+
+/**
+ * Formats "לעילוי נשמת" following Jewish tradition and user specifications:
+ * Shows the deceased's name followed by father/mother connector:
+ * e.g., "לעילוי נשמת: [שם הנפטר] בן/בת [שם ההורה]".
+ */
+export function formatLeiluyNishmat(person: {
+  title?: string | null;
+  first_name: string;
+  last_name: string;
+  gender?: 'male' | 'female' | string;
+  father_or_mother_name?: string | null;
+  notes?: string | null;
+}): string {
+  const parent = (person.father_or_mother_name || '').trim();
+  if (!parent) return '';
+
+  const { cleanTitle, showTitle, cleanFirstName, cleanLastName } = getDeceasedFormattedParts(person);
+  const nameParts = [showTitle ? cleanTitle : '', cleanFirstName, cleanLastName].filter(Boolean);
+  const deceasedName = nameParts.join(' ').replace(/\s+/g, ' ').trim();
+
+  // If parent already starts with 'בן ', 'בת ', 'בר '
+  if (/^(?:בן|בת|בר)\s+/i.test(parent)) {
+    return `${deceasedName} ${parent}`;
+  }
+
+  const connector = person.gender === 'female' ? 'בת' : 'בן';
+  return `${deceasedName} ${connector} ${parent}`;
 }
 
 /**

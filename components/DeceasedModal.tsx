@@ -108,7 +108,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
     setGender(newGender);
     if (newGender === 'male' && (title === 'מרת' || title === 'הרבנית' || !title)) {
       setTitle('ר\'');
-    } else if (newGender === 'female' && (title === 'ר\'' || title === 'הרה"ח ר\'' || title === 'הגאון רבי' || !title)) {
+    } else if (newGender === 'female' && (title === 'ר\'' || title === 'אדמו"ר' || title === 'אדמו״ר' || title === 'הגאון רבי' || !title)) {
       setTitle('מרת');
     }
   };
@@ -273,7 +273,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                 {gender === 'male' ? (
                   <>
                     <option value="ר׳">ר׳</option>
-                    <option value="הרה״ח ר׳">הרה״ח ר׳</option>
+                    <option value="אדמו״ר">אדמו״ר</option>
                     <option value="הגאון רבי">הגאון רבי</option>
                     <option value="הרב">הרב</option>
                     <option value="">ללא תואר</option>

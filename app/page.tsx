@@ -22,6 +22,7 @@ import {
   getDeceasedFullName,
   formatHebrewDateString,
   getGenerationRelationInfo,
+  formatLeiluyNishmat,
 } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
@@ -722,7 +723,7 @@ export default function HomePage() {
                             </div>
                             {person.father_or_mother_name && (
                               <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                                לעילוי נשמת {person.father_or_mother_name}
+                                לעילוי נשמת: {formatLeiluyNishmat(person)}
                               </span>
                             )}
                             <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
@@ -1296,7 +1297,7 @@ export default function HomePage() {
                             </div>
                             {person.father_or_mother_name && (
                               <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                                לעילוי נשמת {person.father_or_mother_name}
+                                לעילוי נשמת: {formatLeiluyNishmat(person)}
                               </span>
                             )}
                             <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
