@@ -14,6 +14,7 @@ interface LineageStep {
   gen: number;
   name: string;
   relation: string;
+  gender?: 'male' | 'female';
   nodeId?: string;
   deceased_id?: string;
 }
@@ -26,32 +27,62 @@ interface LineageModalProps {
   userGeneration?: number;
 }
 
-function getStepGender(stepName: string, stepRelation?: string): 'male' | 'female' {
-  const rel = stepRelation || '';
+function getStepGender(step: { name?: string; relation?: string; gender?: 'male' | 'female' } | string, maybeRel?: string): 'male' | 'female' {
+  if (typeof step === 'object' && step !== null) {
+    if (step.gender === 'male' || step.gender === 'female') return step.gender;
+    return getStepGender(step.name || '', step.relation || '');
+  }
+  const stepName = (typeof step === 'string' ? step : '') || '';
+  const rel = maybeRel || '';
+
+  // 1. Explicit female titles/prefixes take highest priority
   if (
-    rel.includes('אם') ||
+    stepName.startsWith('מרת ') ||
+    stepName.startsWith('אשת ') ||
+    stepName.startsWith('בת ') ||
+    stepName.startsWith('הרבנית ') ||
+    stepName.includes('לבית') ||
+    rel.includes('אם קדמונית') ||
     rel.includes('סבתא') ||
     rel.includes('דודה') ||
     rel.includes('אחות') ||
-    rel.includes('בת') ||
-    rel.includes('אישה') ||
-    rel.includes('אשת') ||
-    stepName.includes('מרת') ||
-    stepName.includes('הרבנית') ||
-    stepName.includes('אשת') ||
-    stepName.includes('לבית') ||
-    stepName.includes('בת ')
+    rel === 'אם' ||
+    rel.startsWith('אם ')
   ) {
     return 'female';
   }
 
+  // 2. Explicit male titles
+  if (
+    stepName.startsWith('רבי ') ||
+    stepName.startsWith("ר' ") ||
+    stepName.startsWith('הגאון ') ||
+    stepName.startsWith('הרב ') ||
+    stepName.startsWith('רבנו ') ||
+    stepName.startsWith('הרה"ק ') ||
+    stepName.startsWith('הרה"ח ') ||
+    stepName.startsWith('הקצין ') ||
+    stepName.startsWith('האלוף ') ||
+    stepName.startsWith('הפוסק ') ||
+    stepName.includes('אב"ד') ||
+    stepName.includes('ראב"ד') ||
+    rel.includes('אב קדמון') ||
+    rel.includes('סבא') ||
+    rel.includes('דוד') ||
+    rel.includes('אח') ||
+    rel === 'אב' ||
+    rel.startsWith('אב ')
+  ) {
+    return 'male';
+  }
+
   const femaleNames = new Set([
-    'חיה', 'גולדה', 'לאה', 'שרה', 'שרלה', "שרל'ה", 'רבקה', 'רחל', 'מרים', 'חנה', 'מלכה', 'בינה', 'עטל',
-    'דבורה', 'אסתר', 'פייגא', 'גיטל', 'צפורה', 'ציפורה', 'מרגית', 'רונית', 'בלה', 'פרומה',
-    'ליבה', 'בריינה', 'שפרינצה', 'שיינדל', 'הינדא', 'הינדע', 'פריידא', 'טויבא', 'מרגלא', 'הענא',
-    'איטה', 'קריינדל', 'יוסטא', 'נעכע', 'חאסע', 'דרייזל', 'דינה', 'בתיה', 'רחמה', 'רוחמה',
-    'שפרינצא', 'רייזל', 'פערל', 'מינדל', 'דובריש', 'ביילא', 'רייכלא', 'סלאווה', 'טאבע',
-    'זלאטא', 'שבע', 'הנציא', 'יוכבד', 'רוזה', 'שפרה', 'שושנה', 'בלומא', 'יאכנט', 'סירקה',
+    'חיה', 'גולדה', 'גולדא', 'לאה', 'שרה', 'שרלה', "שרל'ה", 'רבקה', 'רחל', 'מרים', 'חנה', 'מלכה', 'בינה', 'עטל',
+    'דבורה', 'אסתר', 'פייגא', 'גיטל', 'צפורה', 'ציפורה', 'מרגית', 'רונית', 'בלה', 'פרומה', 'דאברא', 'חאסע',
+    'ליבה', 'בריינה', 'שפרינצה', 'שיינדל', 'הינדא', 'הינדע', 'פריידא', 'טויבא', 'מרגלא', 'הענא', 'צירל',
+    'איטה', 'קריינדל', 'יוסטא', 'נעכע', 'דרייזל', 'דינה', 'בתיה', 'רחמה', 'רוחמה', 'רוזה', 'שפרה',
+    'שפרינצא', 'רייזל', 'פערל', 'מינדל', 'דובריש', 'ביילא', 'רייכלא', 'סלאווה', 'טאבע', 'זלאטא', 'שבע', 'הנציא',
+    'יוכבד', 'שושנה', 'בלומא', 'יאכנט', 'סירקה', 'סירקא',
     'Chaya', 'Sara', 'Sarah', 'Golda', 'Leah', 'Rivka', 'Rachel', 'Miriam', 'Chana', 'Malka',
     'Bina', 'Dvora', 'Esther', 'Feiga', 'Gitel', 'Tzipora', 'Bella', 'Fruma', 'Maria', 'Klara',
     'Ruchla', 'Mindla', 'Cyrla', 'Frajdla', 'Rajzla', 'Ita', 'Marjem', 'Toba', 'Dobra', 'Laja',
@@ -66,8 +97,8 @@ function getStepGender(stepName: string, stepRelation?: string): 'male' | 'femal
   return 'male';
 }
 
-function getChildConnector(stepName: string, stepRelation?: string): 'בן' | 'בת' {
-  return getStepGender(stepName, stepRelation) === 'female' ? 'בת' : 'בן';
+function getChildConnector(step: LineageStep): 'בן' | 'בת' {
+  return (step.gender === 'female' || getStepGender(step) === 'female') ? 'בת' : 'בן';
 }
 
 export default function LineageModal({
@@ -85,16 +116,16 @@ export default function LineageModal({
   const rawPath: LineageStep[] = Array.isArray(person.lineage_path) && person.lineage_path.length > 0
     ? (person.lineage_path as LineageStep[])
     : [
-        { gen: 1, name: currentUser?.name || 'יוסף שלום זאב (ספי) רייכקינד', relation: 'אני / בעל היומן' },
-        { gen: person.generation || 2, name: getDeceasedFullName(person), relation: person.relationship || `דור ${person.generation || 2}` }
+        { gen: 1, name: currentUser?.name || 'יוסף שלום זאב (ספי) רייכקינד', relation: 'אני / בעל היומן', gender: 'male' },
+        { gen: person.generation || 2, name: getDeceasedFullName(person), relation: person.relationship || `דור ${person.generation || 2}`, gender: person.gender || 'male' }
       ];
 
   // Build full chain with "בן/בת":
-  // "ספי ➔ בן מיכאל ➔ בן חיה ➔ בת גולדה לאה ➔ בת רבי שמואל גדליה"
+  // "ספי ➔ בן מיכאל ➔ בן חיה ➔ בת נפתלי צבי ➔ בן יוחנן דוד"
   const chainSentence = rawPath.map((step, idx) => {
     if (idx === 0) return step.name;
     const prevStep = rawPath[idx - 1];
-    const connector = getChildConnector(prevStep.name, prevStep.relation);
+    const connector = getChildConnector(prevStep);
     return `${connector} ${step.name}`;
   }).join(' ➔ ');
 
@@ -230,29 +261,33 @@ export default function LineageModal({
                 const isFirst = idx === 0;
                 const isLast = idx === rawPath.length - 1;
                 const prevStep = idx > 0 ? rawPath[idx - 1] : null;
-                const prevGender = prevStep ? getStepGender(prevStep.name, prevStep.relation) : 'male';
-                const isSon = prevGender === 'male';
+                const isSon = prevStep ? (prevStep.gender === 'male' || getStepGender(prevStep) === 'male') : true;
 
                 return (
                   <React.Fragment key={`banner-${step.gen}-${idx}`}>
                     {prevStep && (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-black shadow-2xs border ${
-                        isSon
-                          ? 'bg-blue-100 text-blue-900 border-blue-300'
-                          : 'bg-rose-100 text-rose-900 border-rose-300'
-                      }`}>
-                        <ArrowLeft className={`w-3 h-3 ${isSon ? 'text-blue-600' : 'text-rose-600'}`} />
+                      <span
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold tracking-tight border shadow-none shrink-0 ${
+                          isSon
+                            ? 'bg-blue-50/80 text-blue-800 border-blue-200/80'
+                            : 'bg-rose-50/80 text-rose-800 border-rose-200/80'
+                        }`}
+                        title={isSon ? 'בן של' : 'בת של'}
+                      >
+                        <ArrowLeft className={`w-2.5 h-2.5 shrink-0 ${isSon ? 'text-blue-600' : 'text-rose-600'}`} />
                         <span>{isSon ? 'בן של' : 'בת של'}</span>
                       </span>
                     )}
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-serif shadow-2xs border ${
-                      isLast
-                        ? 'bg-amber-100 text-amber-950 border-amber-400 font-black ring-2 ring-amber-300'
-                        : isFirst
-                        ? 'bg-blue-50 text-blue-950 border-blue-300 font-bold'
-                        : 'bg-white text-slate-800 border-slate-200 font-bold'
-                    }`}>
-                      <span>{step.name}</span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-serif shadow-2xs border transition ${
+                        isLast
+                          ? 'bg-amber-100 text-amber-950 border-amber-400 font-black ring-2 ring-amber-300'
+                          : isFirst
+                          ? 'bg-blue-50 text-blue-950 border-blue-300 font-bold'
+                          : 'bg-white text-slate-800 border-slate-200 font-bold hover:border-slate-300'
+                      }`}
+                    >
+                      <span>{step.name || `פלוני/ת (דור ${step.gen})`}</span>
                     </span>
                   </React.Fragment>
                 );
@@ -275,7 +310,7 @@ export default function LineageModal({
             {rawPath.map((step, idx) => {
               const isFirst = idx === 0;
               const isLast = idx === rawPath.length - 1;
-              const stepGender = getStepGender(step.name, step.relation);
+              const stepGender = step.gender || getStepGender(step);
               const isSon = stepGender === 'male';
 
               return (
