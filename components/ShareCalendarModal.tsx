@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Share2,
@@ -16,8 +16,15 @@ import {
   Trash2,
   Users,
   RefreshCw,
+  GitBranch,
+  GitCommit,
 } from 'lucide-react';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
+import {
+  extractBranchHierarchy,
+  matchesBranchHierarchyFilter,
+  getGenerationRelationInfo,
+} from '@/lib/hebrew-calendar';
 
 interface ShareCalendarModalProps {
   isOpen: boolean;
@@ -48,6 +55,8 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
     branches.map((b) => b.id)
   );
+  const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
+  const [maxGen, setMaxGen] = useState<string>('all');
   const [shareRole, setShareRole] = useState<'member' | 'editor'>('member');
   const [copiedWebLink, setCopiedWebLink] = useState(false);
   const [copiedSyncLink, setCopiedSyncLink] = useState(false);
@@ -58,6 +67,11 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const [newMemberRole, setNewMemberRole] = useState<'member' | 'editor'>('editor');
   const [savingMember, setSavingMember] = useState(false);
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
+
+  const branchHierarchy = useMemo(
+    () => extractBranchHierarchy(deceased, branches),
+    [deceased, branches]
+  );
 
   // Sync selected branches when branches change
   React.useEffect(() => {
@@ -80,14 +94,23 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     }
   };
 
-  const selectAll = () => setSelectedBranchIds(branches.map((b) => b.id));
-  const isAllSelected = selectedBranchIds.length === branches.length;
-  const isPartialSelected = selectedBranchIds.length < branches.length;
+  const selectAll = () => {
+    setSelectedBranchIds(branches.map((b) => b.id));
+    setSelectedSubBranch('all');
+  };
+  const isAllSelected = selectedBranchIds.length === branches.length && selectedSubBranch === 'all';
+  const isPartialSelected = !isAllSelected;
 
-  // Compute deceased count in selected branches
-  const selectedDeceasedCount = deceased.filter((d) =>
-    selectedBranchIds.includes(d.branch_id)
-  ).length;
+  // Compute deceased count matching selected branches, subBranch, and maxGen
+  const selectedDeceasedCount = deceased.filter((d) => {
+    if (!selectedBranchIds.includes(d.branch_id)) return false;
+    if (selectedSubBranch !== 'all' && !matchesBranchHierarchyFilter(d, selectedSubBranch, branches)) return false;
+    if (maxGen !== 'all') {
+      const relGen = getGenerationRelationInfo(d, 1).relativeGeneration;
+      if (relGen > Number(maxGen)) return false;
+    }
+    return true;
+  }).length;
 
   // Selected branch names
   const selectedBranchNames = branches
@@ -97,13 +120,15 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   // Generate web share link
   const branchParam = selectedBranchIds.join(',');
   const roleParam = shareRole === 'editor' ? '&role=editor' : '';
-  const webShareUrl = `${origin}/?share=true&calendarId=${calendar.id}&branches=${branchParam}${roleParam}`;
+  const subBranchParam = selectedSubBranch !== 'all' ? `&subBranch=${encodeURIComponent(selectedSubBranch)}` : '';
+  const maxGenParam = maxGen !== 'all' ? `&maxGen=${encodeURIComponent(maxGen)}` : '';
+  const webShareUrl = `${origin}/?share=true&calendarId=${calendar.id}&branches=${branchParam}${subBranchParam}${maxGenParam}${roleParam}`;
 
   // Generate iCal / WebCal sync link
   const protocol = origin.startsWith('https') ? 'webcal:' : 'http:';
   const cleanHost = origin.replace(/^https?:\/\//, '');
   const effectiveToken = feedToken && feedToken !== 'shared' ? feedToken : calendar.id;
-  const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}?branches=${branchParam}`;
+  const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}?branches=${branchParam}${subBranchParam}${maxGenParam}`;
   const directGoogleAddUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
 
   // Copy helper
@@ -124,11 +149,15 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
 
   // WhatsApp share
   const handleShareWhatsApp = () => {
-    const branchLabel = isAllSelected
+    const subNode = selectedSubBranch !== 'all' ? branchHierarchy.allNodesById[selectedSubBranch] : null;
+    const branchLabel = subNode
+      ? subNode.shortLabel
+      : isAllSelected
       ? 'כל הענפים'
       : selectedBranchNames.join(' + ');
+    const genLabel = maxGen !== 'all' ? ` • עד דור ${maxGen}` : ' • כל הדורות';
     const roleLabel = shareRole === 'editor' ? 'כולל הרשאת עריכה והוספה' : 'צפייה וסנכרון ליומן';
-    const text = `שלום! מצורף קישור ליומן הזיכרון והיארצייט המשפחתי עבור *${calendar.name}* (ענף: ${branchLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מציג את תאריכי היארצייט העבריים, אזכרות קרובות, ואפשרות להוסיף ישירות ליומן Google שלך בלחיצה אחת (כל שינוי ביומן מתעדכן אוטומטית אצל כולם).`;
+    const text = `שלום! מצורף קישור ליומן הזיכרון והיארצייט המשפחתי עבור *${calendar.name}* (ענף: ${branchLabel}${genLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מציג את תאריכי היארצייט העבריים, אזכרות קרובות, ואפשרות להוסיף ישירות ליומן Google שלך בלחיצה אחת (כל שינוי ביומן מתעדכן אוטומטית אצל כולם).`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };
@@ -139,11 +168,15 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     setSavingMember(true);
     setMemberMessage(null);
     try {
+      const payloadBranches = [...selectedBranchIds];
+      if (selectedSubBranch !== 'all') payloadBranches.push(selectedSubBranch);
+      if (maxGen !== 'all') payloadBranches.push(`maxGen:${maxGen}`);
+
       await onManageMember(
         newMemberEmail.trim().toLowerCase(),
         newMemberName.trim() || newMemberEmail.trim().split('@')[0],
         newMemberRole,
-        selectedBranchIds
+        payloadBranches
       );
       setNewMemberEmail('');
       setNewMemberName('');
@@ -198,16 +231,16 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
             </div>
           </div>
 
-          {/* Step 1: Branch Selection */}
+          {/* Step 1: Branch, Sub-Branch & Generation Depth Selection */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-800">
-                1. בחר אילו ענפי משפחה לשתף:
+                1. בחר שיוך לענף / תת-ענף ומספר דורות מהעץ:
               </label>
               <div className="flex items-center gap-2 text-xs">
                 {isPartialSelected && (
                   <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
-                    שיתוף חלקי פעיל
+                    שיתוף מותאם אישית
                   </span>
                 )}
                 {!isAllSelected && (
@@ -218,6 +251,72 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                     בחר הכל
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Sub-Branch Dropdown (Gen 2 / Gen 3 / Gen 4) & Max Generations Dropdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1 mb-1">
+                  <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>ענף מרכזי / תת-ענף (עד דור 4):</span>
+                </label>
+                <select
+                  value={selectedSubBranch}
+                  onChange={(e) => setSelectedSubBranch(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
+                >
+                  <option value="all">כל הענפים ותתי-הענפים</option>
+                  {branchHierarchy.mainBranches.length > 0 && (
+                    <optgroup label="── ענף מרכזי (הורים • דור 2) ──">
+                      {branchHierarchy.mainBranches.map((mb) => (
+                        <option key={mb.id} value={mb.id}>
+                          {mb.shortLabel} ({mb.count})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {branchHierarchy.grandparentBranches.length > 0 && (
+                    <optgroup label="── סבא וסבתא (דור 3) ──">
+                      {branchHierarchy.grandparentBranches.map((gp) => (
+                        <option key={gp.id} value={gp.id}>
+                          {gp.shortLabel} ({gp.count})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {branchHierarchy.greatGrandparentBranches.length > 0 && (
+                    <optgroup label="── סבא-רבא וסבתא-רבתא (דור 4) ──">
+                      {branchHierarchy.greatGrandparentBranches.map((ggp) => (
+                        <option key={ggp.id} value={ggp.id}>
+                          {ggp.shortLabel} ({ggp.count})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1 mb-1">
+                  <GitCommit className="w-3.5 h-3.5 text-blue-600" />
+                  <span>כמה דורות מהעץ להכניס ליומן?</span>
+                </label>
+                <select
+                  value={maxGen}
+                  onChange={(e) => setMaxGen(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
+                >
+                  <option value="all">הכל — כל הדורות בעץ (מקסימום)</option>
+                  <option value="3">עד דור 3 (סבא וסבתא)</option>
+                  <option value="4">עד דור 4 (סבא-רבא וסבתא-רבתא)</option>
+                  <option value="5">עד דור 5 (בני נינים / 5 דורות)</option>
+                  <option value="6">עד דור 6 (6 דורות)</option>
+                  <option value="8">עד דור 8 (8 דורות)</option>
+                  <option value="10">עד דור 10 (10 דורות)</option>
+                  <option value="15">עד דור 15 (15 דורות)</option>
+                  <option value="20">עד דור 20 (20 דורות)</option>
+                </select>
               </div>
             </div>
 
@@ -267,7 +366,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 font-medium">
-              נבחרו <strong className="text-slate-800">{selectedBranchIds.length}</strong> מתוך {branches.length} ענפים ({selectedDeceasedCount} נפטרים יוצגו למקבל הקישור).
+              לפי הבחירה הנוכחית: <strong className="text-slate-800">{selectedDeceasedCount}</strong> נפטרים מהעץ ייכללו ביומן המשותף.
             </p>
           </div>
 

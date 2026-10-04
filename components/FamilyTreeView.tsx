@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
 import {
   formatDisplayDateWithGregorian,
   getDeceasedFormattedParts,
   getGenerationRelationInfo,
   formatLeiluyNishmat,
+  extractBranchHierarchy,
+  matchesBranchHierarchyFilter,
 } from '@/lib/hebrew-calendar';
 import { isHolocaustVictim } from '@/components/DeceasedList';
-import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame } from 'lucide-react';
+import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame, GitBranch, Layers } from 'lucide-react';
 
 interface FamilyTreeViewProps {
   deceased: DeceasedPerson[];
@@ -30,15 +32,51 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
   onAddDeceased,
   onOpenLineage,
 }) => {
+  const [selectedMainBranch, setSelectedMainBranch] = useState<string>('all');
+  const [selectedGrandparentBranch, setSelectedGrandparentBranch] = useState<string>('all');
+  const [selectedGreatGrandparentBranch, setSelectedGreatGrandparentBranch] = useState<string>('all');
   const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
+  const [maxGenerationsFilter, setMaxGenerationsFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyMissingDates, setOnlyMissingDates] = useState(false);
 
-  const branchMap = new Map(branches.map(b => [b.id, b]));
+  const branchMap = useMemo(() => new Map(branches.map(b => [b.id, b])), [branches]);
+
+  const branchHierarchy = useMemo(
+    () => extractBranchHierarchy(deceased, branches),
+    [deceased, branches]
+  );
+
+  const visibleGrandparentBranches = useMemo(() => {
+    if (selectedMainBranch === 'all') return branchHierarchy.grandparentBranches;
+    return branchHierarchy.grandparentBranches.filter((n) => n.parentId === selectedMainBranch);
+  }, [branchHierarchy, selectedMainBranch]);
+
+  const visibleGreatGrandparentBranches = useMemo(() => {
+    if (selectedGrandparentBranch !== 'all') {
+      return branchHierarchy.greatGrandparentBranches.filter((n) => n.parentId === selectedGrandparentBranch);
+    }
+    if (selectedMainBranch !== 'all') {
+      const validGen3Ids = new Set(
+        branchHierarchy.grandparentBranches
+          .filter((n) => n.parentId === selectedMainBranch)
+          .map((n) => n.id)
+      );
+      return branchHierarchy.greatGrandparentBranches.filter((n) => n.parentId && validGen3Ids.has(n.parentId));
+    }
+    return branchHierarchy.greatGrandparentBranches;
+  }, [branchHierarchy, selectedMainBranch, selectedGrandparentBranch]);
 
   // Filter persons
   const filtered = deceased.filter(p => {
+    if (selectedMainBranch !== 'all' && !matchesBranchHierarchyFilter(p, selectedMainBranch, branches)) return false;
+    if (selectedGrandparentBranch !== 'all' && !matchesBranchHierarchyFilter(p, selectedGrandparentBranch, branches)) return false;
+    if (selectedGreatGrandparentBranch !== 'all' && !matchesBranchHierarchyFilter(p, selectedGreatGrandparentBranch, branches)) return false;
     if (selectedBranchId !== 'all' && p.branch_id !== selectedBranchId) return false;
+    if (maxGenerationsFilter !== 'all') {
+      const relGen = getGenerationRelationInfo(p, userGeneration).relativeGeneration;
+      if (relGen > Number(maxGenerationsFilter)) return false;
+    }
     if (onlyMissingDates && p.hebrew_day && p.hebrew_month) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -113,58 +151,181 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
           </div>
         </div>
 
-        {/* Filters and Search Bar */}
-        <div className="mt-5 pt-4 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setSelectedBranchId('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                selectedBranchId === 'all'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-              }`}
-            >
-              כל הענפים ({deceased.length})
-            </button>
-            {branches.map(b => {
-              const count = deceased.filter(p => p.branch_id === b.id).length;
-              return (
+        {/* Hierarchical Branch Filters & Generation Depth Bar */}
+        <div className="mt-5 pt-4 border-t border-amber-200/60 space-y-3">
+          {/* Level 1: Main Branch (הורים • דור 2) */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <GitBranch className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span className="text-xs font-extrabold text-slate-700">ענף מרכזי:</span>
+              <button
+                onClick={() => {
+                  setSelectedMainBranch('all');
+                  setSelectedGrandparentBranch('all');
+                  setSelectedGreatGrandparentBranch('all');
+                  setSelectedBranchId('all');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  selectedMainBranch === 'all' && selectedBranchId === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                כל המשפחה ({deceased.length})
+              </button>
+              {branchHierarchy.mainBranches.map(mb => {
+                const isSelected = selectedMainBranch === mb.id;
+                const isPaternal = mb.id.includes('פטרנלי');
+                return (
+                  <button
+                    key={mb.id}
+                    onClick={() => {
+                      setSelectedMainBranch(isSelected ? 'all' : mb.id);
+                      setSelectedGrandparentBranch('all');
+                      setSelectedGreatGrandparentBranch('all');
+                      setSelectedBranchId('all');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      isSelected
+                        ? isPaternal
+                          ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                          : 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
+                    }`}
+                  >
+                    {mb.shortLabel} ({mb.count})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select
+                value={maxGenerationsFilter}
+                onChange={(e) => setMaxGenerationsFilter(e.target.value)}
+                className="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer outline-none"
+              >
+                <option value="all">כל הדורות בעץ (מקסימום)</option>
+                <option value="3">עד דור 3 (סבא וסבתא)</option>
+                <option value="4">עד דור 4 (סבא-רבא וסבתא-רבתא)</option>
+                <option value="5">עד דור 5 (5 דורות)</option>
+                <option value="6">עד דור 6 (6 דורות)</option>
+                <option value="8">עד דור 8 (8 דורות)</option>
+                <option value="10">עד דור 10 (10 דורות)</option>
+                <option value="15">עד דור 15 (15 דורות)</option>
+              </select>
+
+              <div className="relative flex-1 sm:w-56">
+                <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="חיפוש לפי שם, קרבה..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-3 pr-9 py-1.5 text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                />
+              </div>
+              {onlyMissingDates && (
                 <button
-                  key={b.id}
-                  onClick={() => setSelectedBranchId(b.id)}
-                  style={{
-                    backgroundColor: selectedBranchId === b.id ? b.color : 'white',
-                    color: selectedBranchId === b.id ? 'white' : '#334155',
-                    borderColor: b.color,
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all shadow-2xs`}
+                  onClick={() => setOnlyMissingDates(false)}
+                  className="px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg"
                 >
-                  {b.name} ({count})
+                  הצג הכל
                 </button>
-              );
-            })}
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="חיפוש לפי שם, קרבה..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-3 pr-9 py-1.5 text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-              />
-            </div>
-            {onlyMissingDates && (
+          {/* Level 2: Grandparents (סבא וסבתא • דור 3) */}
+          {visibleGrandparentBranches.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-amber-200/40">
+              <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="text-[11px] font-bold text-slate-600">סבא וסבתא (דור 3):</span>
               <button
-                onClick={() => setOnlyMissingDates(false)}
-                className="px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg"
+                onClick={() => {
+                  setSelectedGrandparentBranch('all');
+                  setSelectedGreatGrandparentBranch('all');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  selectedGrandparentBranch === 'all'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white/90 text-slate-600 border border-slate-200 hover:bg-white'
+                }`}
               >
-                הצג הכל
+                הכל
               </button>
-            )}
-          </div>
+              {visibleGrandparentBranches.map(gp => {
+                const isSelected = selectedGrandparentBranch === gp.id;
+                return (
+                  <button
+                    key={gp.id}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedGrandparentBranch('all');
+                        setSelectedGreatGrandparentBranch('all');
+                      } else {
+                        setSelectedGrandparentBranch(gp.id);
+                        if (gp.parentId) setSelectedMainBranch(gp.parentId);
+                        setSelectedGreatGrandparentBranch('all');
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-500 text-indigo-950'
+                        : 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    {gp.shortLabel} ({gp.count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Level 3: Great-Grandparents (סבא-רבא וסבתא-רבתא • דור 4 בלבד) */}
+          {visibleGreatGrandparentBranches.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-amber-200/40">
+              <Layers className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span className="text-[11px] font-bold text-slate-600">סבא-רבא וסבתא-רבתא (דור 4):</span>
+              <button
+                onClick={() => setSelectedGreatGrandparentBranch('all')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                  selectedGreatGrandparentBranch === 'all'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-white/90 text-slate-600 border border-slate-200 hover:bg-white'
+                }`}
+              >
+                הכל
+              </button>
+              {visibleGreatGrandparentBranches.map(ggp => {
+                const isSelected = selectedGreatGrandparentBranch === ggp.id;
+                return (
+                  <button
+                    key={ggp.id}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedGreatGrandparentBranch('all');
+                      } else {
+                        setSelectedGreatGrandparentBranch(ggp.id);
+                        if (ggp.parentId) {
+                          setSelectedGrandparentBranch(ggp.parentId);
+                          const gpNode = branchHierarchy.allNodesById[ggp.parentId];
+                          if (gpNode?.parentId) setSelectedMainBranch(gpNode.parentId);
+                        }
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-50 border-amber-500 text-amber-950'
+                        : 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    {ggp.shortLabel} ({ggp.count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -190,7 +351,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
               <p className="text-center text-xs text-slate-500 mb-6">{meta.subtitle}</p>
 
               {/* People Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
                 {genPersons.map((p) => {
                   const branch = branchMap.get(p.branch_id);
                   const isMissingDate = !p.hebrew_day || !p.hebrew_month;
@@ -201,7 +362,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                     <div
                       key={p.id}
                       onClick={() => onOpenLineage?.(p)}
-                      className="group bg-white rounded-xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all duration-200 p-4 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                      className="group bg-white rounded-xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all duration-200 p-4 cursor-pointer relative overflow-hidden flex flex-col justify-between h-full"
                       title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                     >
                       {/* Top colored stripe matching branch */}
@@ -212,7 +373,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
 
                       <div>
                         {/* Top row: Relationship & Branch badge */}
-                        <div className="flex items-center justify-between gap-2 mb-2 pt-1 flex-wrap">
+                        <div className="flex items-center justify-between gap-2 mb-2 pt-1 flex-wrap min-h-[26px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <button
                               type="button"
@@ -251,11 +412,11 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                         </div>
 
                         {/* Person Name & Title */}
-                        <div className="mb-2">
+                        <div className="mb-2 min-h-[68px] flex flex-col justify-center">
                           <h3 className="text-base font-bold text-slate-900 group-hover:text-amber-700 transition-colors leading-snug">
                             {showTitle && cleanTitle && <span className="text-amber-700 font-semibold ml-1.5">{cleanTitle}</span>}
                             <span>{cleanFirstName}</span>
-                            {cleanLastName && <span className="mr-1.5">{cleanLastName}</span>}
+                            {cleanLastName && <span>{' '}{cleanLastName}</span>}
                             {honorific && <span className="text-xs text-slate-400 font-normal mr-1.5">{honorific}</span>}
                           </h3>
                           {p.father_or_mother_name && (

@@ -9,6 +9,7 @@ import {
   formatLineageChainText,
   getGenerationRelationInfo,
   formatLeiluyNishmat,
+  matchesBranchHierarchyFilter,
 } from '@/lib/hebrew-calendar';
 
 export async function GET(
@@ -27,23 +28,51 @@ export async function GET(
   const allBranchIds = allBranches.map(b => b.id);
   const branchMap = new Map(allBranches.map(b => [b.id, b.name]));
 
-  // Get deceased records matching user's selected branches or query branches
+  // Get deceased records matching user's selected branches, sub-branches (Gen 2/3/4), and maxGenerations
   const allDeceased = await DataStore.getDeceased(calendar.id);
   const queryBranches = request.nextUrl.searchParams.get('branches');
+  const querySubBranch = request.nextUrl.searchParams.get('subBranch');
+  const queryMaxGen = request.nextUrl.searchParams.get('maxGen');
+
+  const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
+
+  // Extract any stored maxGen:N or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
+  const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
+  const storedSubBranches = rawSelected.filter(s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:'));
+  const storedUuidBranches = rawSelected.filter(id => allBranchIds.includes(id));
 
   let targetBranchIds: string[];
   if (queryBranches) {
     targetBranchIds = queryBranches.split(',').map(s => s.trim()).filter(Boolean);
-  } else if (Array.isArray(membership.selected_branch_ids) && membership.selected_branch_ids.length > 0) {
-    const validSelected = membership.selected_branch_ids.filter(id => allBranchIds.includes(id));
-    targetBranchIds = validSelected.length > 0 ? validSelected : allBranchIds;
+  } else if (storedUuidBranches.length > 0) {
+    targetBranchIds = storedUuidBranches;
   } else {
     targetBranchIds = allBranchIds;
   }
 
-  const filteredDeceased = allDeceased.filter(d =>
-    targetBranchIds.includes(d.branch_id)
-  );
+  const activeSubBranches: string[] = querySubBranch && querySubBranch !== 'all'
+    ? querySubBranch.split(',').map(s => s.trim()).filter(Boolean)
+    : storedSubBranches;
+
+  const effectiveMaxGenStr = queryMaxGen || (storedMaxGenToken ? storedMaxGenToken.replace('maxGen:', '') : null);
+  const effectiveMaxGen = effectiveMaxGenStr && effectiveMaxGenStr !== 'all' ? Number(effectiveMaxGenStr) : null;
+  const userGen = membership.user_generation ?? 1;
+
+  const filteredDeceased = allDeceased.filter(d => {
+    if (!targetBranchIds.includes(d.branch_id)) return false;
+
+    if (activeSubBranches.length > 0) {
+      const matchesAnySub = activeSubBranches.some(sb => matchesBranchHierarchyFilter(d, sb, allBranches));
+      if (!matchesAnySub) return false;
+    }
+
+    if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
+      const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+      if (relGen > effectiveMaxGen) return false;
+    }
+
+    return true;
+  });
 
   // Initialize iCalendar
   const cal = ical({

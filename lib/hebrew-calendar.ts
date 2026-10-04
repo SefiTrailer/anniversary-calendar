@@ -670,3 +670,283 @@ export function checkDuplicateOrDiscrepancy(
     message: `שים לב: קיים כבר נפטר בשם "${match.first_name} ${match.last_name}" עם תאריך פטירה שונה: ${formatDisplayDateWithGregorian(match.hebrew_day, match.hebrew_month, match.hebrew_year, match.gregorian_original_date)}. האם מדובר באותו אדם עם תאריך מעודכן, או בנפטר אחר בעל שם זהה?`,
   };
 }
+
+export interface SubBranchNode {
+  id: string; // canonical step name or node key
+  label: string; // clean display label
+  shortLabel: string;
+  gen: 2 | 3 | 4;
+  gender?: 'male' | 'female';
+  parentId?: string;
+  count: number;
+  children: SubBranchNode[];
+}
+
+export interface BranchHierarchy {
+  mainBranches: SubBranchNode[]; // Gen 2 (e.g. צד אבא - רייכקינד, צד אמא - רנדל)
+  grandparentBranches: SubBranchNode[]; // Gen 3 (סבא וסבתא)
+  greatGrandparentBranches: SubBranchNode[]; // Gen 4 (סבא-רבא וסבתא-רבתא — נעצר בדור זה)
+  allNodesById: Record<string, SubBranchNode>;
+}
+
+/**
+  * Normalizes a lineage step name into a stable canonical key & label for Gen 2, Gen 3, and Gen 4.
+  * Works dynamically for any family while providing clean labels for known family branches.
+  */
+export function getPersonLineageBranchKeys(
+  person: DeceasedRecord & { lineage_path?: any[] },
+  branches?: { id: string; name: string }[]
+): {
+  gen2Key: string | null;
+  gen2Label: string | null;
+  gen2Short: string | null;
+  gen3Key: string | null;
+  gen3Label: string | null;
+  gen3Short: string | null;
+  gen4Key: string | null;
+  gen4Label: string | null;
+  gen4Short: string | null;
+} {
+  const lp = Array.isArray(person.lineage_path) ? person.lineage_path : [];
+
+  const step2 = lp.find((s: any) => Number(s?.gen) === 2 && !String(s?.relation || '').includes('דודה') && !String(s?.relation || '').includes('דוד')) || lp.find((s: any) => Number(s?.gen) === 2);
+  const step3 = lp.find((s: any) => Number(s?.gen) === 3 && !String(s?.relation || '').includes('אחות') && !String(s?.relation || '').includes('אחי')) || lp.find((s: any) => Number(s?.gen) === 3);
+  const step4 = lp.find((s: any) => Number(s?.gen) === 4 && !String(s?.relation || '').includes('אחות') && !String(s?.relation || '').includes('אחי') && !String(s?.relation || '').includes('משפחת')) || lp.find((s: any) => Number(s?.gen) === 4);
+
+  let gen2Key: string | null = null;
+  let gen2Label: string | null = null;
+  let gen2Short: string | null = null;
+
+  const s2Name = String(step2?.name || step2?.person_name || '').trim();
+  const branchObj = branches?.find(b => b.id === person.branch_id);
+  const branchName = branchObj?.name || person.branch_name || '';
+
+  if (s2Name) {
+    if (s2Name.includes('מיכאל') && s2Name.includes('רייכקינד')) {
+      gen2Key = 'gen2:פטרנלי:מיכאל רייכקינד';
+      gen2Label = 'צד אבא • משפחת רייכקינד (מיכאל רייכקינד)';
+      gen2Short = 'צד אבא (רייכקינד)';
+    } else if ((s2Name.includes('שרה') && (s2Name.includes('רנדל') || s2Name.includes('רייכקינד'))) || s2Name.includes('רנדל')) {
+      gen2Key = 'gen2:מטרנלי:שרה רנדל';
+      gen2Label = 'צד אמא • משפחת רנדל (מרת שרה לבית רנדל ע״ה)';
+      gen2Short = 'צד אמא (רנדל)';
+    } else {
+      const rel2 = String(step2?.relation || '');
+      const sidePrefix = rel2.includes('אם') ? 'צד אמא' : rel2.includes('אב') ? 'צד אבא' : 'ענף מרכזי';
+      gen2Key = `gen2:${s2Name}`;
+      gen2Label = `${sidePrefix} • ${s2Name}`;
+      gen2Short = `${sidePrefix} (${s2Name})`;
+    }
+  } else if (branchName) {
+    if (branchName.includes('רייכקינד') || branchName.includes('סלומון')) {
+      gen2Key = 'gen2:פטרנלי:מיכאל רייכקינד';
+      gen2Label = 'צד אבא • משפחת רייכקינד (מיכאל רייכקינד)';
+      gen2Short = 'צד אבא (רייכקינד)';
+    } else if (branchName.includes('רנדל') || branchName.includes('שטיינר') || branchName.includes('פרוינדליך')) {
+      gen2Key = 'gen2:מטרנלי:שרה רנדל';
+      gen2Label = 'צד אמא • משפחת רנדל (מרת שרה לבית רנדל ע״ה)';
+      gen2Short = 'צד אמא (רנדל)';
+    } else {
+      gen2Key = `gen2:${branchName}`;
+      gen2Label = branchName;
+      gen2Short = branchName;
+    }
+  }
+
+  let gen3Key: string | null = null;
+  let gen3Label: string | null = null;
+  let gen3Short: string | null = null;
+
+  const s3Name = String(step3?.name || step3?.person_name || '').trim();
+  const s3Rel = String(step3?.relation || '');
+  if (s3Name && !s3Rel.includes('אחות ') && !s3Rel.includes('אחי ')) {
+    if (s3Name.includes('עמנואל') && s3Name.includes('רייכקינד')) {
+      gen3Key = 'gen3:עמנואל נתן רייכקינד';
+      gen3Label = 'סבא ר׳ עמנואל נתן רייכקינד ז״ל (ענף רייכקינד)';
+      gen3Short = 'סבא עמנואל נתן רייכקינד';
+    } else if (s3Name.includes('חיה') && (s3Name.includes('סלומון') || s3Name.includes('רייכקינד'))) {
+      gen3Key = 'gen3:חיה רייכקינד (לבית סלומון)';
+      gen3Label = 'סבתא חיה רייכקינד שתחי׳ (לבית סלומון)';
+      gen3Short = 'סבתא חיה (לבית סלומון)';
+    } else if (s3Name.includes('יהושע צבי') && s3Name.includes('רנדל')) {
+      gen3Key = 'gen3:יהושע צבי רנדל';
+      gen3Label = 'סבא ר׳ יהושע צבי רנדל זצ״ל (ענף רנדל)';
+      gen3Short = 'סבא יהושע צבי רנדל';
+    } else if (s3Name.includes('מלכה') && s3Name.includes('רנדל')) {
+      gen3Key = 'gen3:מלכה רנדל';
+      gen3Label = 'סבתא מרת מלכה רנדל ע״ה (פרוינדליך / שטיינר)';
+      gen3Short = 'סבתא מלכה (פרוינדליך / שטיינר)';
+    } else {
+      gen3Key = `gen3:${s3Name}`;
+      gen3Label = s3Name;
+      gen3Short = s3Name;
+    }
+  }
+
+  let gen4Key: string | null = null;
+  let gen4Label: string | null = null;
+  let gen4Short: string | null = null;
+
+  const s4Name = String(step4?.name || step4?.person_name || '').trim();
+  const s4Rel = String(step4?.relation || '');
+  if (s4Name && !s4Rel.includes('אחות ') && !s4Rel.includes('אחי ') && !s4Rel.includes('משפחת ')) {
+    if (s4Name.includes('זאב') && s4Name.includes('רייכקינד')) {
+      gen4Key = 'gen4:זאב וואלף רייכקינד';
+      gen4Label = 'סבא-רבא ר׳ זאב וואלף רייכקינד ז״ל';
+      gen4Short = 'ר׳ זאב וואלף רייכקינד';
+    } else if (s4Name.includes('בינה') && (s4Name.includes('רייכקינד') || s4Name.includes('שרמן'))) {
+      gen4Key = 'gen4:בינה איטל רייכקינד (שרמן)';
+      gen4Label = 'סבתא-רבתא מרת בינה איטל רייכקינד ע״ה (לבית שרמן)';
+      gen4Short = 'מרת בינה איטל (לבית שרמן)';
+    } else if (s4Name.includes('נפתלי צבי') && s4Name.includes('סלומון')) {
+      gen4Key = 'gen4:נפתלי צבי סלומון';
+      gen4Label = 'סבא-רבא ר׳ נפתלי צבי סלומון ז״ל (ענף סלומון-פרוש)';
+      gen4Short = 'ר׳ נפתלי צבי סלומון (סלומון-פרוש)';
+    } else if (s4Name.includes('גולדה לאה') && (s4Name.includes('סלומון') || s4Name.includes('ניימן'))) {
+      gen4Key = 'gen4:גולדה לאה סלומון (ניימן)';
+      gen4Label = 'סבתא-רבתא מרת גולדה לאה סלומון ע״ה (לבית ניימן)';
+      gen4Short = 'מרת גולדה לאה (לבית ניימן)';
+    } else if (s4Name.includes('אהרן') && s4Name.includes('רנדל')) {
+      gen4Key = 'gen4:אהרן רנדל';
+      gen4Label = 'סבא-רבא ר׳ אהרן רנדל ז״ל';
+      gen4Short = 'ר׳ אהרן רנדל';
+    } else if (s4Name.includes('מינדל יונה') && (s4Name.includes('רנדל') || s4Name.includes('סלומון'))) {
+      gen4Key = 'gen4:מינדל יונה רנדל (סלומון)';
+      gen4Label = 'סבתא-רבתא מרת מינדל יונה רנדל ע״ה (לבית סלומון)';
+      gen4Short = 'מרת מינדל יונה (לבית סלומון)';
+    } else if (s4Name.includes('דוד אהרן') && s4Name.includes('פרוינדליך')) {
+      gen4Key = 'gen4:דוד אהרן פרוינדליך';
+      gen4Label = 'סבא-רבא ר׳ דוד אהרן פרוינדליך הי״ד (ענף פרוינדליך)';
+      gen4Short = 'ר׳ דוד אהרן פרוינדליך';
+    } else if (s4Name.includes('שרה') && (s4Name.includes('פרוינדליך') || s4Name.includes('שטיינר'))) {
+      gen4Key = 'gen4:שרה פרוינדליך (שטיינר)';
+      gen4Label = 'סבתא-רבתא מרת שרה פרוינדליך הי״ד (לבית שטיינר)';
+      gen4Short = 'מרת שרה (לבית שטיינר)';
+    } else {
+      gen4Key = `gen4:${s4Name}`;
+      gen4Label = s4Name;
+      gen4Short = s4Name;
+    }
+  }
+
+  return {
+    gen2Key,
+    gen2Label,
+    gen2Short,
+    gen3Key,
+    gen3Label,
+    gen3Short,
+    gen4Key,
+    gen4Label,
+    gen4Short,
+  };
+}
+
+/**
+  * Builds the 3-level branch hierarchy (stopping at Generation 4: Great-Grandparents):
+  * - Gen 2: Main Branch (ענף מרכזי — צד אבא / צד אמא)
+  * - Gen 3: Grandparent Sub-Branch (תת-ענף סבא וסבתא)
+  * - Gen 4: Great-Grandparent Sub-Branch (תת-ענף סבא-רבא וסבתא-רבתא)
+  */
+export function extractBranchHierarchy(
+  deceasedList: (DeceasedRecord & { lineage_path?: any[] })[],
+  branches?: { id: string; name: string }[]
+): BranchHierarchy {
+  const allNodesById: Record<string, SubBranchNode> = {};
+  const mainBranches: SubBranchNode[] = [];
+  const grandparentBranches: SubBranchNode[] = [];
+  const greatGrandparentBranches: SubBranchNode[] = [];
+
+  for (const person of deceasedList) {
+    const keys = getPersonLineageBranchKeys(person, branches);
+
+    if (keys.gen2Key && keys.gen2Label && keys.gen2Short) {
+      if (!allNodesById[keys.gen2Key]) {
+        const node2: SubBranchNode = {
+          id: keys.gen2Key,
+          label: keys.gen2Label,
+          shortLabel: keys.gen2Short,
+          gen: 2,
+          count: 0,
+          children: [],
+        };
+        allNodesById[keys.gen2Key] = node2;
+        mainBranches.push(node2);
+      }
+      allNodesById[keys.gen2Key].count++;
+    }
+
+    if (keys.gen3Key && keys.gen3Label && keys.gen3Short && keys.gen2Key) {
+      if (!allNodesById[keys.gen3Key]) {
+        const node3: SubBranchNode = {
+          id: keys.gen3Key,
+          label: keys.gen3Label,
+          shortLabel: keys.gen3Short,
+          gen: 3,
+          parentId: keys.gen2Key,
+          count: 0,
+          children: [],
+        };
+        allNodesById[keys.gen3Key] = node3;
+        grandparentBranches.push(node3);
+        allNodesById[keys.gen2Key]?.children.push(node3);
+      }
+      allNodesById[keys.gen3Key].count++;
+    }
+
+    if (keys.gen4Key && keys.gen4Label && keys.gen4Short && keys.gen3Key) {
+      if (!allNodesById[keys.gen4Key]) {
+        const node4: SubBranchNode = {
+          id: keys.gen4Key,
+          label: keys.gen4Label,
+          shortLabel: keys.gen4Short,
+          gen: 4,
+          parentId: keys.gen3Key,
+          count: 0,
+          children: [],
+        };
+        allNodesById[keys.gen4Key] = node4;
+        greatGrandparentBranches.push(node4);
+        allNodesById[keys.gen3Key]?.children.push(node4);
+      }
+      allNodesById[keys.gen4Key].count++;
+    }
+  }
+
+  // Sort main branches so Paternal (אבא) is first, Maternal (אמא) is second
+  mainBranches.sort((a, b) => {
+    if (a.id.includes('פטרנלי')) return -1;
+    if (b.id.includes('פטרנלי')) return 1;
+    return b.count - a.count;
+  });
+
+  return {
+    mainBranches,
+    grandparentBranches,
+    greatGrandparentBranches,
+    allNodesById,
+  };
+}
+
+/**
+  * Checks whether a deceased record belongs to a selected hierarchical branch filter key
+  * (`gen2:...`, `gen3:...`, `gen4:...`, or legacy `branch_id` / `'all'`).
+  */
+export function matchesBranchHierarchyFilter(
+  person: DeceasedRecord & { lineage_path?: any[] },
+  filterKey: string,
+  branches?: { id: string; name: string }[]
+): boolean {
+  if (!filterKey || filterKey === 'all') return true;
+
+  if (filterKey.startsWith('gen2:') || filterKey.startsWith('gen3:') || filterKey.startsWith('gen4:')) {
+    const keys = getPersonLineageBranchKeys(person, branches);
+    if (filterKey.startsWith('gen2:')) return keys.gen2Key === filterKey;
+    if (filterKey.startsWith('gen3:')) return keys.gen3Key === filterKey;
+    if (filterKey.startsWith('gen4:')) return keys.gen4Key === filterKey;
+  }
+
+  // Legacy branch_id UUID match
+  return person.branch_id === filterKey;
+}
+

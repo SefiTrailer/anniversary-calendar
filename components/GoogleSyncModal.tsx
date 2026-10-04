@@ -1,13 +1,30 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { FamilyBranch, UserMembership } from '@/lib/types';
-import { X, Copy, Check, ExternalLink, Download, Calendar, ShieldCheck, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { DeceasedPerson, FamilyBranch, UserMembership } from '@/lib/types';
+import {
+  extractBranchHierarchy,
+  matchesBranchHierarchyFilter,
+  getGenerationRelationInfo,
+} from '@/lib/hebrew-calendar';
+import {
+  X,
+  Copy,
+  Check,
+  ExternalLink,
+  Download,
+  Calendar,
+  HelpCircle,
+  GitBranch,
+  GitCommit,
+  Layers,
+} from 'lucide-react';
 
 interface GoogleSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   branches: FamilyBranch[];
+  deceased?: DeceasedPerson[];
   membership: UserMembership | null;
   calendarName: string;
   onUpdateBranches: (selectedBranchIds: string[]) => Promise<void>;
@@ -17,31 +34,83 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   isOpen,
   onClose,
   branches,
+  deceased = [],
   membership,
   calendarName,
   onUpdateBranches,
 }) => {
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
+  const [maxGen, setMaxGen] = useState<string>('all');
   const [copied, setCopied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [origin, setOrigin] = useState('');
+
+  const branchHierarchy = useMemo(
+    () => extractBranchHierarchy(deceased, branches),
+    [deceased, branches]
+  );
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin);
     }
-    if (membership) {
-      setSelectedBranches(membership.selected_branch_ids || []);
+    const allIds = branches.map((b) => b.id);
+    if (membership && Array.isArray(membership.selected_branch_ids)) {
+      const raw = membership.selected_branch_ids;
+      const uuids = raw.filter((id) => allIds.includes(id));
+      setSelectedBranches(uuids.length > 0 ? uuids : allIds);
+
+      const savedSub = raw.find((s) => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:'));
+      setSelectedSubBranch(savedSub || 'all');
+
+      const savedMaxGen = raw.find((s) => s.startsWith('maxGen:'));
+      setMaxGen(savedMaxGen ? savedMaxGen.replace('maxGen:', '') : 'all');
     } else {
-      setSelectedBranches(branches.map((b) => b.id));
+      setSelectedBranches(allIds);
+      setSelectedSubBranch('all');
+      setMaxGen('all');
     }
   }, [membership, branches, isOpen]);
+
+  const persistSelection = async (nextUuids: string[], nextSub: string, nextMaxGen: string) => {
+    const combined: string[] = [...nextUuids];
+    if (nextSub && nextSub !== 'all') combined.push(nextSub);
+    if (nextMaxGen && nextMaxGen !== 'all') combined.push(`maxGen:${nextMaxGen}`);
+
+    setIsSaving(true);
+    try {
+      await onUpdateBranches(combined);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Compute how many deceased with valid dates match the current sync settings
+  const matchingDeceasedCount = useMemo(() => {
+    const userGen = membership?.user_generation ?? 1;
+    return deceased.filter((d) => {
+      if (!d.hebrew_day || !d.hebrew_month) return false;
+      if (selectedBranches.length > 0 && !selectedBranches.includes(d.branch_id)) return false;
+      if (selectedSubBranch !== 'all' && !matchesBranchHierarchyFilter(d, selectedSubBranch, branches)) {
+        return false;
+      }
+      if (maxGen !== 'all') {
+        const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+        if (relGen > Number(maxGen)) return false;
+      }
+      return true;
+    }).length;
+  }, [deceased, selectedBranches, selectedSubBranch, maxGen, branches, membership]);
 
   if (!isOpen) return null;
 
   const token = membership?.feed_token || 'demo-token-default';
-  const httpsUrl = `${origin}/api/calendar/${token}`;
-  const webcalUrl = httpsUrl.replace(/^https?:\/\//i, 'webcal://');
+  const queryParams = new URLSearchParams();
+  if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
+  if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
+  const queryString = queryParams.toString();
+  const httpsUrl = `${origin}/api/calendar/${token}${queryString ? `?${queryString}` : ''}`;
 
   const toggleBranch = async (branchId: string) => {
     const updated = selectedBranches.includes(branchId)
@@ -49,18 +118,26 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
       : [...selectedBranches, branchId];
 
     setSelectedBranches(updated);
-    setIsSaving(true);
-    try {
-      await onUpdateBranches(updated);
-    } finally {
-      setIsSaving(false);
-    }
+    await persistSelection(updated, selectedSubBranch, maxGen);
   };
 
   const selectAll = async () => {
     const all = branches.map((b) => b.id);
     setSelectedBranches(all);
-    await onUpdateBranches(all);
+    setSelectedSubBranch('all');
+    await persistSelection(all, 'all', maxGen);
+  };
+
+  const handleSubBranchChange = async (nextSub: string) => {
+    setSelectedSubBranch(nextSub);
+    const all = branches.map((b) => b.id);
+    setSelectedBranches(all);
+    await persistSelection(all, nextSub, maxGen);
+  };
+
+  const handleMaxGenChange = async (nextMaxGen: string) => {
+    setMaxGen(nextMaxGen);
+    await persistSelection(selectedBranches, selectedSubBranch, nextMaxGen);
   };
 
   const copyToClipboard = () => {
@@ -83,7 +160,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             <div>
               <h2 className="text-lg font-bold">סנכרון ימי פטירה ליומן גוגל (Google Calendar)</h2>
               <p className="text-xs text-blue-100">
-                קבל עדכונים חיים ליומן האישי שלך בהתאמה אישית לענפי המשפחה שלך
+                בחר איזה ענף או תת-ענף וכמה דורות מהעץ ברצונך להכניס ליומן שלך
               </p>
             </div>
           </div>
@@ -96,65 +173,144 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Branch Filtering Selection */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-bold text-slate-800">
-                1. בחר אילו ענפי משפחה לסנכרן ליומן שלך:
-              </h3>
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          {/* 1. Generation Depth Selection */}
+          <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <GitCommit className="w-4 h-4 text-blue-700 shrink-0" />
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  1. כמה דורות מהעץ ברצונך להכניס ליומן שלך?
+                </h3>
+              </div>
+              <span className="text-xs font-extrabold text-blue-800 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                {matchingDeceasedCount} ימי זיכרון פעילים
+              </span>
+            </div>
+            <p className="text-xs text-slate-600">
+              העץ המלא מכיל את מקסימום הדורות. תוכל לבחור לסנכרן את כל הדורות, או להגביל עד דור מסוים בלבד:
+            </p>
+            <select
+              value={maxGen}
+              onChange={(e) => handleMaxGenChange(e.target.value)}
+              className="w-full text-sm font-bold text-slate-800 bg-white border border-blue-300 rounded-xl px-3.5 py-2.5 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">הכל — כל הדורות בעץ (מקסימום דורות)</option>
+              <option value="3">עד דור 3 בלבד (הורים, סבא וסבתא)</option>
+              <option value="4">עד דור 4 בלבד (כולל סבא-רבא וסבתא-רבתא)</option>
+              <option value="5">עד דור 5 (בני נינים / 5 דורות)</option>
+              <option value="6">עד דור 6 (6 דורות)</option>
+              <option value="8">עד דור 8 (8 דורות)</option>
+              <option value="10">עד דור 10 (10 דורות)</option>
+              <option value="15">עד דור 15 (15 דורות)</option>
+              <option value="20">עד דור 20 (20 דורות)</option>
+            </select>
+          </div>
+
+          {/* 2. Hierarchical Branch / Sub-Branch Selection (Up to Generation 4) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-indigo-600 shrink-0" />
+                <h3 className="text-sm font-extrabold text-slate-800">
+                  2. שיוך לענף מרכזי או תת-ענף (עד דור סבא-רבא וסבתא-רבתא):
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={selectAll}
-                className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline"
+                className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline cursor-pointer"
               >
-                בחר הכל
+                כל הענפים
               </button>
             </div>
-            <p className="text-xs text-slate-500 mb-3">
-              סימון ענף יציג ביומן שלך רק את ימי השנה (יארצייט) של אותו ענף, בלי להעמיס שמות שאינם מהצד שלך.
-            </p>
 
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {branches.map((b) => {
-                const isChecked = selectedBranches.includes(b.id);
-                return (
-                  <label
-                    key={b.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition ${
-                      isChecked
-                        ? 'bg-blue-50/60 border-blue-300 text-slate-900'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleBranch(b.id)}
-                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+            <select
+              value={selectedSubBranch}
+              onChange={(e) => handleSubBranchChange(e.target.value)}
+              className="w-full text-sm font-bold text-slate-800 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">כל המשפחה (כל הענפים ותתי-הענפים)</option>
+
+              {branchHierarchy.mainBranches.length > 0 && (
+                <optgroup label="── ענף מרכזי (הורים • דור 2) ──">
+                  {branchHierarchy.mainBranches.map((mb) => (
+                    <option key={mb.id} value={mb.id}>
+                      {mb.label} ({mb.count} בעץ)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {branchHierarchy.grandparentBranches.length > 0 && (
+                <optgroup label="── תת-ענף סבא וסבתא (דור 3) ──">
+                  {branchHierarchy.grandparentBranches.map((gp) => (
+                    <option key={gp.id} value={gp.id}>
+                      {gp.label} ({gp.count} בעץ)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {branchHierarchy.greatGrandparentBranches.length > 0 && (
+                <optgroup label="── תת-ענף סבא-רבא וסבתא-רבתא (דור 4) ──">
+                  {branchHierarchy.greatGrandparentBranches.map((ggp) => (
+                    <option key={ggp.id} value={ggp.id}>
+                      {ggp.label} ({ggp.count} בעץ)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+
+            {/* Legacy Branch Checkboxes */}
+            <div className="pt-2 border-t border-slate-200/80">
+              <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5 text-slate-400" />
+                <span>או סינון לפי ענפי היומן הראשיים:</span>
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {branches.map((b) => {
+                  const isChecked = selectedBranches.includes(b.id);
+                  return (
+                    <label
+                      key={b.id}
+                      className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition ${
+                        isChecked
+                          ? 'bg-blue-50/60 border-blue-300 text-slate-900'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleBranch(b.id)}
+                          className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                        />
+                        <span className="text-xs font-bold">{b.name}</span>
+                      </div>
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: b.color || '#2563eb' }}
                       />
-                      <span className="text-sm font-medium">{b.name}</span>
-                    </div>
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: b.color || '#2563eb' }}
-                    />
-                  </label>
-                );
-              })}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
+
             {isSaving && (
-              <span className="text-[11px] text-blue-600 font-medium block mt-2 animate-pulse">
-                שומר את בחירת הענפים... הפיד מתעדכן בזמן אמת!
+              <span className="text-[11px] text-blue-600 font-medium block mt-1 animate-pulse">
+                שומר את הגדרות הסנכרון שלך... הפיד מתעדכן אוטומטית!
               </span>
             )}
           </div>
 
-          {/* Feed URL & Direct Google Button */}
+          {/* 3. Feed URL & Direct Google Button */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-slate-800">
-              2. התחברות ליומן בלחיצה אחת:
+              3. התחברות ליומן בלחיצה אחת:
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -171,7 +327,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
               <button
                 type="button"
                 onClick={copyToClipboard}
-                className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm shadow-sm transition"
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm shadow-sm transition cursor-pointer"
               >
                 {copied ? (
                   <>
@@ -204,7 +360,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
               <li>מדביקים את הקישור שהועתק למעלה ולוחצים <strong>״הוסף יומן״</strong>.</li>
             </ol>
             <p className="text-[11px] text-amber-800 pt-1">
-              ✨ מעתה והלאה, ימי השנה של הנפטרים בענפים שלך יופיעו אוטומטית בכל שנה קדימה!
+              ✨ מעתה והלאה, ימי השנה של הנפטרים בענף ובמספר הדורות שבחרת יתעדכנו אוטומטית בכל שנה!
             </p>
           </div>
         </div>
@@ -217,13 +373,13 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-medium"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>הורד כקובץ .ICS חד-פעמי</span>
+            <span>הורד כקובץ .ICS חד-פעמי ({matchingDeceasedCount} נפטרים)</span>
           </a>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition shadow-sm"
+            className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition shadow-sm cursor-pointer"
           >
             סגור
           </button>

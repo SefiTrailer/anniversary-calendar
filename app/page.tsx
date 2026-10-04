@@ -1594,6 +1594,7 @@ export default function HomePage() {
             isOpen={isSyncModalOpen}
             onClose={() => setIsSyncModalOpen(false)}
             branches={branches}
+            deceased={deceased}
             membership={membership}
             calendarName={currentCalendar.name}
             onUpdateBranches={handleUpdateMembershipBranches}
