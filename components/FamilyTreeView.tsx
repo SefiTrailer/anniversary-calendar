@@ -88,18 +88,18 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
 
   // Group by generation
   const generationLabels: Record<number, { title: string; subtitle: string }> = {
-    1: { title: 'דור 1 • בעל היומן', subtitle: 'אני / בעל היומן (ספי)' },
+    1: { title: 'דור 1 • בעל היומן', subtitle: 'אני / בעל היומן' },
     2: { title: 'דור 2 • הורים ודודים', subtitle: 'אבא, אמא, דודים ודודות' },
     3: { title: 'דור 3 • סבים, סבתות ואחיהם', subtitle: 'סבא וסבתא מצד אב ומצד אם, אחי הסבים והסבתות' },
     4: { title: 'דור 4 • סבא-רבא וסבתא-רבתא', subtitle: 'הורי הסבים והסבתות, אחי סבא-רבא' },
     5: { title: 'דור 5 • סבא-רבא-רבא', subtitle: 'סבא וסבתא של הסבים' },
-    6: { title: 'דור 6 • אבות קדמונים', subtitle: 'ממייסדי פתח תקווה ונחלת שבעה, בוני ירושלים' },
-    7: { title: 'דור 7 • אבות קדמונים ומחדשי היישוב', subtitle: 'ממנהיגי היישוב הישן, משפחות פרוש וסלומון' },
-    8: { title: 'דור 8 • שורשי השושלת ורבני אשכנז', subtitle: 'מחדש היישוב האשכנזי (הראש"ז צורף), שושלת בעל "תוספות יום טוב"' },
-    9: { title: 'דור 9 • רבני סיגט וגאוני ליטא', subtitle: 'מצוקי ארץ וראשי קהילות קודש' },
+    6: { title: 'דור 6 • אבות קדמונים', subtitle: 'שורשי המשפחה בדור השישי' },
+    7: { title: 'דור 7 • אבות קדמונים', subtitle: 'שורשי המשפחה בדור השביעי' },
+    8: { title: 'דור 8 • שורשי השושלת', subtitle: 'אבות ואמהות השושלת בדור השמיני' },
+    9: { title: 'דור 9 • אבות השושלת', subtitle: 'מצוקי ארץ וראשי קהילות קודש' },
     10: { title: 'דור 10 • אבות הדורות', subtitle: 'רבנים ומאורי הדור' },
     11: { title: 'דור 11 • מגדולי הדורות', subtitle: 'רבנים ומאורי הדור' },
-    12: { title: 'דור 12 • שושלות החסידות וגדולי ישראל', subtitle: 'אדמו"רי קרלין-סטולין ומאורי החסידות' },
+    12: { title: 'דור 12 • שושלות הדורות וגדולי ישראל', subtitle: 'אבות השושלת ומאורי הדורות' },
   };
 
   const generations = Array.from(new Set(filtered.map(p => p.generation || 2))).sort((a, b) => a - b);
@@ -121,7 +121,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
               <h2 className="text-xl font-bold text-slate-900">אילן היוחסין ועץ המשפחה המלא</h2>
             </div>
             <p className="text-sm text-slate-600">
-              שורשי המשפחה מדור לדור: אבות ואמהות מכל הענפים (רייכקינד, רנדל, שטיינר, סלומון, פרוש, ניימן).
+              שורשי המשפחה מדור לדור: אבות ואמהות מכל ענפי המשפחה{branches.length > 0 ? ` (${branches.map(b => b.name).join(' • ')})` : ''}.
             </p>
           </div>
 

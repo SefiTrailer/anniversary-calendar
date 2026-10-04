@@ -317,7 +317,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="למשל: עמנואל נתן"
+                placeholder="למשל: ישראל מאיר"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -330,7 +330,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="למשל: רייכקינד"
+                placeholder="למשל: ישראלי"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"

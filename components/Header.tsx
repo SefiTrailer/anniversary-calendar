@@ -223,7 +223,9 @@ export const Header: React.FC<HeaderProps> = ({
                       >
                         <option value={3}>דור 3 (סבא / סבתא)</option>
                         <option value={2}>דור 2 (הורים)</option>
-                        <option value={1}>דור 1 (בעל היומן / ספי)</option>
+                        <option value={1}>
+                          דור 1 (בעל היומן{currentUser?.name ? ` / ${currentUser.name.split(' ')[0]}` : ''})
+                        </option>
                         <option value={0}>דור 0 (ילדים של בעל היומן)</option>
                         <option value={-1}>דור 1- (נכדים)</option>
                         <option value={-2}>דור 2- (נינים)</option>

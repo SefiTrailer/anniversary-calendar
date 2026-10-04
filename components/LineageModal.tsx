@@ -117,12 +117,11 @@ export default function LineageModal({
   const rawPath: LineageStep[] = Array.isArray(person.lineage_path) && person.lineage_path.length > 0
     ? (person.lineage_path as LineageStep[])
     : [
-        { gen: 1, name: currentUser?.name || 'יוסף שלום זאב (ספי) רייכקינד', relation: 'אני / בעל היומן', gender: 'male' },
+        { gen: 1, name: currentUser?.name || 'בעל היומן', relation: 'אני / בעל היומן', gender: 'male' },
         { gen: person.generation || 2, name: getDeceasedFullName(person), relation: person.relationship || `דור ${person.generation || 2}`, gender: person.gender || 'male' }
       ];
 
   // Build full chain with "בן/בת":
-  // "ספי ➔ בן מיכאל ➔ בן חיה ➔ בת נפתלי צבי ➔ בן יוחנן דוד"
   const chainSentence = rawPath.map((step, idx) => {
     if (idx === 0) return step.name;
     const prevStep = rawPath[idx - 1];
