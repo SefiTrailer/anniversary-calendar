@@ -78,77 +78,134 @@ export async function GET(
 
   // Initialize iCalendar (omit timezone so DTSTAMP is strictly UTC with 'Z' per RFC 5545, and set X-WR-TIMEZONE)
   const cal = ical({
-    name: `${calendar.name} - ${membership.user_name}`,
-    description: `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית עבור ${membership.user_name}`,
+    name: `${calendar.name} - ${membership.user_name}`.normalize('NFKC'),
+    description: `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית עבור ${membership.user_name}`.normalize('NFKC'),
     method: ICalCalendarMethod.PUBLISH,
     ttl: 3600, // Re-fetch every 1 hour
     x: [['X-WR-TIMEZONE', 'Asia/Jerusalem']],
   });
 
   // Dynamic sequence so Google Calendar automatically updates modified dates or names
-  const dynamicSequence = Math.floor(Date.now() / 60000);
+  const dynamicSequence = Math.max(1, Math.floor((Date.now() - 1790000000000) / 60000));
   const nowStamp = new Date();
+  const todayUtcStr = nowStamp.toISOString().slice(0, 10);
 
-  // Calculate upcoming yahrzeits for the next 3 years (rolling window, keeps feed fast & well under Google's 1MB limit)
+  interface PendingIcsEvent {
+    id: string;
+    gregorianDateStr: string;
+    startDate: Date;
+    endDate: Date;
+    summary: string;
+    description: string;
+    isUpcomingFromToday: boolean;
+  }
+
+  const pendingEvents: PendingIcsEvent[] = [];
+
+  // Calculate yahrzeits for the current Hebrew year + next 2 years (includePassedThisYear = true so the full current year is present)
   for (const dec of filteredDeceased) {
-    const branchName = branchMap.get(dec.branch_id) || 'כללי';
-    const upcomingList = calculateUpcomingYahrzeits(dec, 3);
+    const branchName = (branchMap.get(dec.branch_id) || 'כללי').normalize('NFKC');
+    const upcomingList = calculateUpcomingYahrzeits(dec, 3, true);
 
-    const fullDisplayName = getDeceasedFullName(dec);
-    const leiluyText = formatLeiluyNishmat(dec);
+    const rawFullDisplayName = getDeceasedFullName(dec).normalize('NFKC');
+    const fullDisplayName = rawFullDisplayName
+      .replace(/\s*—\s*/g, ' ')
+      .replace(/[{}]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Keep summary concise if the name contains a long biographical comma suffix from Geni
+    let conciseName = fullDisplayName;
+    if (conciseName.length > 55 && conciseName.includes(',')) {
+      const honorificMatch = conciseName.match(/(זצוק״ל|זצ״ל|זי״ע|הי״ד|ע״ה|ז״ל)$/);
+      const firstPart = conciseName.split(',')[0].trim();
+      conciseName = honorificMatch && !firstPart.endsWith(honorificMatch[1])
+        ? `${firstPart} ${honorificMatch[1]}`
+        : firstPart;
+    }
+
+    const leiluyText = formatLeiluyNishmat(dec).normalize('NFKC');
     const originalDateFormatted = formatDisplayDateWithGregorian(
       dec.hebrew_day,
       dec.hebrew_month,
       dec.hebrew_year,
       dec.gregorian_original_date
-    );
+    ).normalize('NFKC');
 
     const genInfo = getGenerationRelationInfo(dec, membership.user_generation ?? 1);
-    const relationLine = `קרבה לבעל היומן: ${genInfo.fullDescription}`;
+    const relationLine = `קרבה: ${genInfo.badgeText} (${genInfo.relationDescription})`.normalize('NFKC');
 
-    // Keep lineage chain concise inside the ICS file so large 25-gen trees don't bloat the feed past 1MB
+    // Keep lineage chain concise inside the ICS file so large 25-gen trees stay fast and well under Google's size limits
     const rawPath = Array.isArray(dec.lineage_path) ? dec.lineage_path : [];
-    const lineageChain =
-      rawPath.length > 6
-        ? `${rawPath.slice(0, 3).map((s: any) => s.name || s).join(' ➔ ')} ➔ ... (${rawPath.length} דורות) ... ➔ ${rawPath.slice(-2).map((s: any) => s.name || s).join(' ➔ ')}`
-        : formatLineageChainText(dec.lineage_path);
+    const lineageChain = (
+      rawPath.length > 5
+        ? `${rawPath.slice(0, 2).map((s: any) => s.name || s).join(' -> ')} -> ... (${rawPath.length} דורות) ... -> ${rawPath.slice(-2).map((s: any) => s.name || s).join(' -> ')}`
+        : formatLineageChainText(dec.lineage_path).replace(/➔/g, '->')
+    ).normalize('NFKC');
     const lineageUrl = `${request.nextUrl.origin}/?lineage=${dec.id}`;
 
+    const cleanNotes = dec.notes
+      ? dec.notes
+          .normalize('NFKC')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180)
+      : '';
+
     for (const upcoming of upcomingList) {
-      // Event dates: All-day event on upcoming.gregorianDate
-      const startDate = new Date(upcoming.gregorianDate);
-      startDate.setHours(0, 0, 0, 0);
+      const [y, m, d] = upcoming.gregorianDateStr.split('-').map(Number);
+      if (!y || !m || !d) continue;
 
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 1);
+      // Strictly UTC midnight so ical-generator formats the exact YYYYMMDD regardless of server timezone
+      const startDate = new Date(Date.UTC(y, m - 1, d));
+      const endDate = new Date(Date.UTC(y, m - 1, d + 1));
 
-      const yearsPassedText = upcoming.yearsPassed > 0 ? ` (שנת ה-${upcoming.yearsPassed} לפטירה)` : '';
+      const yearsPassedText = upcoming.yearsPassed > 0 ? ` (שנת ה-${upcoming.yearsPassed})` : '';
 
-      cal.createEvent({
+      pendingEvents.push({
         id: `yahrzeit-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
-        start: startDate,
-        end: endDate,
-        allDay: true,
-        sequence: dynamicSequence,
-        stamp: nowStamp,
-        lastModified: nowStamp,
-        summary: `יארצייט: ${fullDisplayName}${yearsPassedText}`,
+        gregorianDateStr: upcoming.gregorianDateStr,
+        startDate,
+        endDate,
+        isUpcomingFromToday: upcoming.gregorianDateStr >= todayUtcStr,
+        summary: `יארצייט: ${conciseName}${yearsPassedText}`,
         description: [
           `יום השנה לפטירת ${fullDisplayName}`,
           leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
           relationLine,
-          lineageChain ? `\nשרשרת היוחסין:\n${lineageChain}` : '',
-          `\nצפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}`,
-          `\nתאריך עברי מקורי: ${originalDateFormatted}`,
+          `תאריך עברי: ${originalDateFormatted}`,
           `ענף משפחתי: ${branchName}`,
-          dec.notes ? `הערות ומנהגים: ${dec.notes}` : '',
-          dec.after_sunset ? 'הערה הלכתית: הפטירה אירעה לאחר צאת הכוכבים / השקיעה.' : '',
+          lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
+          cleanNotes ? `הערות: ${cleanNotes}` : '',
+          dec.after_sunset ? 'הערה הלכתית: הפטירה לאחר שקיעה/צאת הכוכבים.' : '',
+          `צפייה באילן: ${lineageUrl}`,
         ]
           .filter(Boolean)
           .join('\n'),
-        url: lineageUrl,
       });
     }
+  }
+
+  // Sort events so upcoming events starting from today (this month Tishrei & next month Cheshvan first!) appear at the very top of the ICS file
+  pendingEvents.sort((a, b) => {
+    if (a.isUpcomingFromToday !== b.isUpcomingFromToday) {
+      return a.isUpcomingFromToday ? -1 : 1;
+    }
+    return a.gregorianDateStr.localeCompare(b.gregorianDateStr);
+  });
+
+  for (const ev of pendingEvents) {
+    cal.createEvent({
+      id: ev.id,
+      start: ev.startDate,
+      end: ev.endDate,
+      allDay: true,
+      sequence: dynamicSequence,
+      stamp: nowStamp,
+      lastModified: nowStamp,
+      summary: ev.summary,
+      description: ev.description,
+    });
   }
 
   const calendarString = cal.toString();
@@ -157,7 +214,7 @@ export async function GET(
     status: 200,
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Cache-Control': 'public, max-age=60, s-maxage=60, must-revalidate',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Access-Control-Allow-Origin': '*',
     },
   });

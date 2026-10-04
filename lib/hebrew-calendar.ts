@@ -199,19 +199,28 @@ export interface UpcomingYahrzeit {
 /**
  * Calculates upcoming Yahrzeits for a deceased person for the given number of years.
  */
-export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears: number = 10): UpcomingYahrzeit[] {
+export function calculateUpcomingYahrzeits(
+  deceased: DeceasedRecord,
+  countYears: number = 10,
+  includePassedThisYear: boolean = false
+): UpcomingYahrzeit[] {
   if (!deceased || !deceased.hebrew_day || !deceased.hebrew_month) {
     return [];
   }
   const results: UpcomingYahrzeit[] = [];
-  const currentHDate = new HDate();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const currentHDate = new HDate(today);
   const currentYear = currentHDate.getFullYear();
 
   // Normalize month name to English standard Hebcal name
   const rawMonth = String(deceased.hebrew_month).trim();
   const baseMonth = HEBREW_TO_HEBCAL_MONTH[rawMonth] || rawMonth;
 
-  for (let i = 0; i < countYears; i++) {
+  // Check if this year's yahrzeit has already passed; if so and includePassedThisYear is false, start from next year
+  const maxOffset = countYears + 1;
+  for (let i = 0; i < maxOffset && results.length < countYears; i++) {
     const targetYear = currentYear + i;
     const isTargetLeap = HDate.isLeapYear(targetYear);
     let targetMonth = baseMonth;
@@ -237,6 +246,12 @@ export function calculateUpcomingYahrzeits(deceased: DeceasedRecord, countYears:
 
       const yahrzeitHDate = new HDate(safeDay, targetMonth, targetYear);
       const greg = yahrzeitHDate.greg();
+      greg.setHours(0, 0, 0, 0);
+
+      if (!includePassedThisYear && greg.getTime() < today.getTime()) {
+        continue;
+      }
+
       const yearsPassed = deceased.hebrew_year ? targetYear - deceased.hebrew_year : 0;
 
       const yStr = greg.getFullYear();
@@ -608,12 +623,23 @@ export function getGoogleCalendarDirectAddUrl(
     .filter(Boolean)
     .join('\n');
 
-  const start = new Date(upcoming.gregorianDate);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-
-  const startStr = start.toISOString().slice(0, 10).replace(/-/g, '');
-  const endStr = end.toISOString().slice(0, 10).replace(/-/g, '');
+  const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
+  let startStr: string;
+  let endStr: string;
+  if (y && m && d) {
+    const startUtc = new Date(Date.UTC(y, m - 1, d));
+    const endUtc = new Date(Date.UTC(y, m - 1, d + 1));
+    startStr = startUtc.toISOString().slice(0, 10).replace(/-/g, '');
+    endStr = endUtc.toISOString().slice(0, 10).replace(/-/g, '');
+  } else {
+    const start = new Date(upcoming.gregorianDate);
+    const sy = start.getFullYear();
+    const sm = String(start.getMonth() + 1).padStart(2, '0');
+    const sd = String(start.getDate()).padStart(2, '0');
+    startStr = `${sy}${sm}${sd}`;
+    const end = new Date(sy, start.getMonth(), start.getDate() + 1);
+    endStr = `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, '0')}${String(end.getDate()).padStart(2, '0')}`;
+  }
 
   const params = new URLSearchParams({
     action: 'TEMPLATE',

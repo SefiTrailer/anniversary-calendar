@@ -664,7 +664,7 @@ export default function HomePage() {
     const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics`;
+    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?v=3`;
   }, [membership]);
 
   const googleCalendarSubscribeUrl = useMemo(() => {
@@ -674,7 +674,7 @@ export default function HomePage() {
 
   const icsDownloadUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    return `/api/calendar/${membership.feed_token}.ics`;
+    return `/api/calendar/${membership.feed_token}.ics?v=3`;
   }, [membership]);
 
   const isAdmin = Boolean(
@@ -806,7 +806,7 @@ export default function HomePage() {
                     href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
                       `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
                         typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app'
-                      }/api/calendar/${sharedViewData.feedToken}?branches=${sharedViewData.selectedBranchIds.join(',')}`
+                      }/api/calendar/${sharedViewData.feedToken}.ics?v=3&branches=${sharedViewData.selectedBranchIds.join(',')}`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"

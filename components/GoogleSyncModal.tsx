@@ -106,8 +106,12 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   if (!isOpen) return null;
 
   const token = membership?.feed_token || 'demo-token-default';
-  const httpsUrl = `${origin}/api/calendar/${token}.ics`;
-  const webcalUrl = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics`;
+  const queryParams = new URLSearchParams({ v: '3' });
+  if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
+  if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
+  const queryString = queryParams.toString();
+  const httpsUrl = `${origin}/api/calendar/${token}.ics?${queryString}`;
+  const webcalUrl = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics?${queryString}`;
 
   const toggleBranch = async (branchId: string) => {
     const updated = selectedBranches.includes(branchId)

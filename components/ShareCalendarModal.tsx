@@ -128,7 +128,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const protocol = origin.startsWith('https') ? 'webcal:' : 'http:';
   const cleanHost = origin.replace(/^https?:\/\//, '');
   const effectiveToken = feedToken && feedToken !== 'shared' ? feedToken : calendar.id;
-  const syncQuery = new URLSearchParams();
+  const syncQuery = new URLSearchParams({ v: '3' });
   if (!isAllSelected && selectedBranchIds.length > 0) syncQuery.set('branches', branchParam);
   if (selectedSubBranch !== 'all') syncQuery.set('subBranch', selectedSubBranch);
   if (maxGen !== 'all') syncQuery.set('maxGen', maxGen);
