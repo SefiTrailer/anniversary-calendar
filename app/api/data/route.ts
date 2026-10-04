@@ -306,6 +306,19 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      case 'update_calendar': {
+        const { calendarId, name, description } = payload;
+        const isAdmin = await isCalendarAdmin(calendarId, userEmail);
+        if (!isAdmin) {
+          return NextResponse.json({ error: 'רק מנהל היומן יכול לערוך את שם ותיאור היומן' }, { status: 403 });
+        }
+        const updated = await DataStore.updateCalendar(calendarId, {
+          name: (name || '').trim(),
+          description: (description ?? '').trim(),
+        });
+        return NextResponse.json({ success: true, calendar: updated });
+      }
+
       case 'delete_calendar': {
         const { calendarId } = payload;
         const isAdmin = await isCalendarAdmin(calendarId, userEmail);

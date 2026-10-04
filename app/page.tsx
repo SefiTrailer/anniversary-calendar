@@ -23,6 +23,8 @@ import {
   formatHebrewDateString,
   getGenerationRelationInfo,
   formatLeiluyNishmat,
+  formatCalendarDisplayName,
+  formatCalendarDescription,
 } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
@@ -50,6 +52,7 @@ import {
   GitCommit,
   ChevronDown,
   ChevronUp,
+  Pencil,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -99,6 +102,10 @@ export default function HomePage() {
   const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
   const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
+  const [isEditingCalendarInfo, setIsEditingCalendarInfo] = useState(false);
+  const [editCalendarName, setEditCalendarName] = useState('');
+  const [editCalendarDescription, setEditCalendarDescription] = useState('');
+  const [isSavingCalendarInfo, setIsSavingCalendarInfo] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -555,6 +562,35 @@ export default function HomePage() {
     }
   };
 
+  const handleUpdateCalendar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCalendar || !currentUser || !editCalendarName.trim()) return;
+    setIsSavingCalendarInfo(true);
+    try {
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_calendar',
+          payload: {
+            calendarId: currentCalendar.id,
+            name: editCalendarName.trim(),
+            description: editCalendarDescription.trim(),
+          },
+          userEmail: currentUser.email,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.calendar) {
+        setCurrentCalendar(data.calendar);
+        setIsEditingCalendarInfo(false);
+        await loadUserCalendars();
+      }
+    } finally {
+      setIsSavingCalendarInfo(false);
+    }
+  };
+
   const handleUpdateMembershipBranches = async (selectedBranchIds: string[]) => {
     if (!membership || !currentCalendar) return;
     const updated = { ...membership, selected_branch_ids: selectedBranchIds };
@@ -659,13 +695,20 @@ export default function HomePage() {
     }
   }, [targetDeceased]);
 
+  const savedCustomCalName = useMemo(() => {
+    const token = (membership?.selected_branch_ids || []).find((x) => x.startsWith('calName:'));
+    return token ? token.replace('calName:', '').trim() : '';
+  }, [membership]);
+
   const webcalFeedUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
     const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?v=3`;
-  }, [membership]);
+    const params = new URLSearchParams({ v: '4' });
+    if (savedCustomCalName) params.set('calName', savedCustomCalName);
+    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
+  }, [membership, savedCustomCalName]);
 
   const googleCalendarSubscribeUrl = useMemo(() => {
     if (!webcalFeedUrl) return '';
@@ -674,8 +717,10 @@ export default function HomePage() {
 
   const icsDownloadUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    return `/api/calendar/${membership.feed_token}.ics?v=3`;
-  }, [membership]);
+    const params = new URLSearchParams({ v: '4' });
+    if (savedCustomCalName) params.set('calName', savedCustomCalName);
+    return `/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
+  }, [membership, savedCustomCalName]);
 
   const isAdmin = Boolean(
     currentUser &&
@@ -788,11 +833,11 @@ export default function HomePage() {
               <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                 <div className="space-y-3 max-w-2xl">
                   <h2 className="text-2xl sm:text-4xl font-black font-serif text-slate-50">
-                    {sharedViewData.calendar.name}
+                    {formatCalendarDisplayName(sharedViewData.calendar.name)}
                   </h2>
 
                   <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
-                    יומן ימי פטירה (יארצייט) מסונכרן אוטומטית. ענפים משותפים: {sharedViewData.branches.map((b) => b.name).join(', ')}.
+                    {formatCalendarDescription(sharedViewData.calendar)} &bull; ענפים משותפים: {sharedViewData.branches.map((b) => b.name).join(', ')}.
                   </p>
                 </div>
 
@@ -806,7 +851,7 @@ export default function HomePage() {
                     href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
                       `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
                         typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app'
-                      }/api/calendar/${sharedViewData.feedToken}.ics?v=3&branches=${sharedViewData.selectedBranchIds.join(',')}`
+                      }/api/calendar/${sharedViewData.feedToken}.ics?v=4&branches=${sharedViewData.selectedBranchIds.join(',')}`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1169,11 +1214,11 @@ export default function HomePage() {
                       </div>
 
                       <h3 className="font-serif font-black text-xl text-slate-900 group-hover:text-blue-700 transition">
-                        {cal.name}
+                        {formatCalendarDisplayName(cal.name)}
                       </h3>
 
                       <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                        {cal.description || 'יומן זיכרון והנצחה משפחתי מסונכרן ליומן גוגל.'}
+                        {formatCalendarDescription(cal, currentUser.name)}
                       </p>
                     </div>
 
@@ -1289,15 +1334,84 @@ export default function HomePage() {
               <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
               <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-                <div className="space-y-3 max-w-2xl">
-                  <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
-                    {currentCalendar.name}
-                  </h2>
+                <div className="space-y-3 max-w-2xl w-full">
+                  {!isEditingCalendarInfo ? (
+                    <>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
+                          {formatCalendarDisplayName(currentCalendar.name, savedCustomCalName)}
+                        </h2>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditCalendarName(formatCalendarDisplayName(currentCalendar.name));
+                              setEditCalendarDescription(
+                                currentCalendar.description ||
+                                  `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית | בעל היומן: ${
+                                    currentCalendar.created_by_user_name || currentUser.name
+                                  }`
+                              );
+                              setIsEditingCalendarInfo(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold border border-white/15 transition cursor-pointer"
+                            title="הגדר או שנה את שם היומן ותיאורו"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-amber-400" />
+                            <span>הגדר שם יומן</span>
+                          </button>
+                        )}
+                      </div>
 
-                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
-                    {currentCalendar.description ||
-                      'ניהול ימי פטירה (יארצייט) של אבות המשפחה לפי לוח השנה העברי, חלוקה לענפי משפחה וסנכרון אוטומטי ליומן גוגל.'}
-                  </p>
+                      <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
+                        {formatCalendarDescription(currentCalendar, currentUser.name)}
+                      </p>
+                    </>
+                  ) : (
+                    <form onSubmit={handleUpdateCalendar} className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-amber-300 mb-1">
+                          שם היומן (כפי שיופיע באתר וב-Google Calendar):
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editCalendarName}
+                          onChange={(e) => setEditCalendarName(e.target.value)}
+                          placeholder="למשל: ימי זיכרון - יומן משפחת רייכקינד"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-white text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                          תיאור היומן (שם בעל היומן ישולב בתיאור היומן):
+                        </label>
+                        <input
+                          type="text"
+                          value={editCalendarDescription}
+                          onChange={(e) => setEditCalendarDescription(e.target.value)}
+                          placeholder={`בעל היומן: ${currentCalendar.created_by_user_name || currentUser.name}`}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-200 text-xs focus:ring-2 focus:ring-amber-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingCalendarInfo(false)}
+                          className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-slate-200 transition cursor-pointer"
+                        >
+                          ביטול
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingCalendarInfo}
+                          className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isSavingCalendarInfo ? 'שומר...' : 'שמור שם ותיאור יומן'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
 
                 {/* Quick Metrics & Actions */}
@@ -1645,6 +1759,7 @@ export default function HomePage() {
             deceased={deceased}
             membership={membership}
             calendarName={currentCalendar.name}
+            calendarOwnerName={currentCalendar.created_by_user_name || currentUser?.name}
             onUpdateBranches={handleUpdateMembershipBranches}
           />
 

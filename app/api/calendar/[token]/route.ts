@@ -10,6 +10,8 @@ import {
   getGenerationRelationInfo,
   formatLeiluyNishmat,
   matchesBranchHierarchyFilter,
+  formatCalendarDisplayName,
+  formatCalendarDescription,
 } from '@/lib/hebrew-calendar';
 
 export async function GET(
@@ -34,11 +36,13 @@ export async function GET(
   const queryBranches = request.nextUrl.searchParams.get('branches');
   const querySubBranch = request.nextUrl.searchParams.get('subBranch');
   const queryMaxGen = request.nextUrl.searchParams.get('maxGen');
+  const queryCalName = request.nextUrl.searchParams.get('calName');
 
   const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
 
-  // Extract any stored maxGen:N or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
+  // Extract any stored maxGen:N, calName:..., or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
   const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
+  const storedCalNameToken = rawSelected.find(s => s.startsWith('calName:'));
   const storedSubBranches = rawSelected.filter(s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:'));
   const storedUuidBranches = rawSelected.filter(id => allBranchIds.includes(id));
 
@@ -76,10 +80,14 @@ export async function GET(
     return true;
   });
 
+  const customCalName = queryCalName || (storedCalNameToken ? storedCalNameToken.replace(/^calName:/, '') : '');
+  const displayCalName = formatCalendarDisplayName(calendar.name, customCalName).normalize('NFKC');
+  const displayCalDesc = formatCalendarDescription(calendar, membership.user_name).normalize('NFKC');
+
   // Initialize iCalendar (omit timezone so DTSTAMP is strictly UTC with 'Z' per RFC 5545, and set X-WR-TIMEZONE)
   const cal = ical({
-    name: `${calendar.name} - ${membership.user_name}`.normalize('NFKC'),
-    description: `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית עבור ${membership.user_name}`.normalize('NFKC'),
+    name: displayCalName,
+    description: displayCalDesc,
     method: ICalCalendarMethod.PUBLISH,
     ttl: 3600, // Re-fetch every 1 hour
     x: [['X-WR-TIMEZONE', 'Asia/Jerusalem']],

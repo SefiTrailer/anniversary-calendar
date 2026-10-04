@@ -6,6 +6,7 @@ import {
   extractBranchHierarchy,
   matchesBranchHierarchyFilter,
   getGenerationRelationInfo,
+  formatCalendarDisplayName,
 } from '@/lib/hebrew-calendar';
 import {
   X,
@@ -18,6 +19,8 @@ import {
   GitBranch,
   GitCommit,
   Layers,
+  Edit3,
+  RotateCcw,
 } from 'lucide-react';
 
 interface GoogleSyncModalProps {
@@ -27,6 +30,7 @@ interface GoogleSyncModalProps {
   deceased?: DeceasedPerson[];
   membership: UserMembership | null;
   calendarName: string;
+  calendarOwnerName?: string;
   onUpdateBranches: (selectedBranchIds: string[]) => Promise<void>;
 }
 
@@ -37,11 +41,14 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   deceased = [],
   membership,
   calendarName,
+  calendarOwnerName,
   onUpdateBranches,
 }) => {
+  const defaultDisplayName = useMemo(() => formatCalendarDisplayName(calendarName), [calendarName]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
   const [maxGen, setMaxGen] = useState<string>('all');
+  const [customCalName, setCustomCalName] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [origin, setOrigin] = useState('');
@@ -66,17 +73,30 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
       const savedMaxGen = raw.find((s) => s.startsWith('maxGen:'));
       setMaxGen(savedMaxGen ? savedMaxGen.replace('maxGen:', '') : 'all');
+
+      const savedCalName = raw.find((s) => s.startsWith('calName:'));
+      setCustomCalName(savedCalName ? savedCalName.replace(/^calName:/, '') : formatCalendarDisplayName(calendarName));
     } else {
       setSelectedBranches(allIds);
       setSelectedSubBranch('all');
       setMaxGen('all');
+      setCustomCalName(formatCalendarDisplayName(calendarName));
     }
-  }, [membership, branches, isOpen]);
+  }, [membership, branches, isOpen, calendarName]);
 
-  const persistSelection = async (nextUuids: string[], nextSub: string, nextMaxGen: string) => {
+  const persistSelection = async (
+    nextUuids: string[],
+    nextSub: string,
+    nextMaxGen: string,
+    nextCalName: string = customCalName
+  ) => {
     const combined: string[] = [...nextUuids];
     if (nextSub && nextSub !== 'all') combined.push(nextSub);
     if (nextMaxGen && nextMaxGen !== 'all') combined.push(`maxGen:${nextMaxGen}`);
+    const cleanName = nextCalName.trim();
+    if (cleanName && cleanName !== defaultDisplayName) {
+      combined.push(`calName:${cleanName}`);
+    }
 
     setIsSaving(true);
     try {
@@ -106,9 +126,11 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   if (!isOpen) return null;
 
   const token = membership?.feed_token || 'demo-token-default';
-  const queryParams = new URLSearchParams({ v: '3' });
+  const effectiveCalName = customCalName.trim() || defaultDisplayName;
+  const queryParams = new URLSearchParams({ v: '4' });
   if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
   if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
+  if (effectiveCalName !== defaultDisplayName) queryParams.set('calName', effectiveCalName);
   const queryString = queryParams.toString();
   const httpsUrl = `${origin}/api/calendar/${token}.ics?${queryString}`;
   const webcalUrl = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics?${queryString}`;
@@ -119,26 +141,31 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
       : [...selectedBranches, branchId];
 
     setSelectedBranches(updated);
-    await persistSelection(updated, selectedSubBranch, maxGen);
+    await persistSelection(updated, selectedSubBranch, maxGen, customCalName);
   };
 
   const selectAll = async () => {
     const all = branches.map((b) => b.id);
     setSelectedBranches(all);
     setSelectedSubBranch('all');
-    await persistSelection(all, 'all', maxGen);
+    await persistSelection(all, 'all', maxGen, customCalName);
   };
 
   const handleSubBranchChange = async (nextSub: string) => {
     setSelectedSubBranch(nextSub);
     const all = branches.map((b) => b.id);
     setSelectedBranches(all);
-    await persistSelection(all, nextSub, maxGen);
+    await persistSelection(all, nextSub, maxGen, customCalName);
   };
 
   const handleMaxGenChange = async (nextMaxGen: string) => {
     setMaxGen(nextMaxGen);
-    await persistSelection(selectedBranches, selectedSubBranch, nextMaxGen);
+    await persistSelection(selectedBranches, selectedSubBranch, nextMaxGen, customCalName);
+  };
+
+  const handleSaveCalName = async (nextName: string) => {
+    setCustomCalName(nextName);
+    await persistSelection(selectedBranches, selectedSubBranch, maxGen, nextName);
   };
 
   const copyToClipboard = () => {
@@ -151,6 +178,8 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     webcalUrl
   )}`;
 
+  const ownerDisplay = calendarOwnerName || membership?.user_name || '';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl my-8 overflow-hidden">
@@ -161,7 +190,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             <div>
               <h2 className="text-lg font-bold">סנכרון ימי פטירה ליומן גוגל (Google Calendar)</h2>
               <p className="text-xs text-blue-100">
-                בחר איזה ענף או תת-ענף וכמה דורות מהעץ ברצונך להכניס ליומן שלך
+                בחר את שם היומן, הענף וכמה דורות מהעץ ברצונך להכניס ליומן שלך
               </p>
             </div>
           </div>
@@ -175,6 +204,42 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          {/* 0. Calendar Display Name & Owner Description */}
+          <div className="bg-amber-50/60 border border-amber-200/90 rounded-xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-amber-700 shrink-0" />
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  שם היומן כפי שיופיע ב-Google Calendar:
+                </h3>
+              </div>
+              {customCalName !== defaultDisplayName && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveCalName(defaultDisplayName)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>איפוס לברירת מחדל</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={customCalName}
+                onChange={(e) => setCustomCalName(e.target.value)}
+                onBlur={() => persistSelection(selectedBranches, selectedSubBranch, maxGen, customCalName)}
+                placeholder={defaultDisplayName}
+                className="flex-1 text-sm font-bold text-slate-900 bg-white border border-amber-300 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <p className="text-[11px] text-slate-600">
+              <strong>תיאור היומן שיצורף אוטומטית:</strong>{' '}
+              לוח ימי פטירה (יארצייט) מתעדכן אוטומטית{ownerDisplay ? ` | בעל היומן: ${ownerDisplay}` : ''}
+            </p>
+          </div>
+
           {/* 1. Generation Depth Selection */}
           <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-4 space-y-2.5">
             <div className="flex items-center justify-between gap-2">

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { CalendarProject, UserMembership } from '@/lib/types';
+import { formatCalendarDisplayName } from '@/lib/hebrew-calendar';
 import {
   Calendar,
   Flame,
@@ -194,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <option value="">📂 כל היומנים שלי</option>
                       {calendars.map((cal) => (
                         <option key={cal.id} value={cal.id}>
-                          {cal.name}
+                          {formatCalendarDisplayName(cal.name)}
                         </option>
                       ))}
                     </select>

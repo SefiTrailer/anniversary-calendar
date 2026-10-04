@@ -934,3 +934,60 @@ export function matchesBranchHierarchyFilter(
   return person.branch_id === filterKey;
 }
 
+/**
+ * Formats the display name of a calendar:
+ * By default formats a family name $$$ as: "ימי זיכרון - יומן משפחת $$$".
+ * If a custom display name override is provided (or if the user already set a custom full title), uses it as-is.
+ */
+export function formatCalendarDisplayName(
+  rawCalendarName?: string | null,
+  customDisplayName?: string | null
+): string {
+  if (customDisplayName && customDisplayName.trim()) {
+    return customDisplayName.trim();
+  }
+  const base = (rawCalendarName || '').trim();
+  if (!base) {
+    return 'ימי זיכרון - יומן משפחתי';
+  }
+  // If it already starts with 'ימי זיכרון', keep it as-is
+  if (base.startsWith('ימי זיכרון')) {
+    return base;
+  }
+  // If it's a family name like "רייכקינד", "משפחת רייכקינד", or "יומן משפחת רייכקינד", format as "ימי זיכרון - יומן משפחת $$$"
+  const cleanFamily = base
+    .replace(/^יומן\s+משפחת\s+/i, '')
+    .replace(/^משפחת\s+/i, '')
+    .trim();
+  if (cleanFamily) {
+    return `ימי זיכרון - יומן משפחת ${cleanFamily}`;
+  }
+  return `ימי זיכרון - יומן משפחת ${base}`;
+}
+
+/**
+ * Formats the calendar description to always include the calendar owner's name ("בעל היומן: ...").
+ */
+export function formatCalendarDescription(
+  calendar?: { name?: string | null; description?: string | null; created_by_user_name?: string | null } | null,
+  fallbackOwnerName?: string | null
+): string {
+  const ownerName = (calendar?.created_by_user_name || fallbackOwnerName || '').trim();
+  const customDesc = (calendar?.description || '').trim();
+
+  if (customDesc && customDesc.includes('בעל היומן')) {
+    return customDesc;
+  }
+  if (customDesc && ownerName) {
+    return `${customDesc} | בעל היומן: ${ownerName}`;
+  }
+  if (customDesc) {
+    return customDesc;
+  }
+  if (ownerName) {
+    return `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית | בעל היומן: ${ownerName}`;
+  }
+  return 'לוח ימי פטירה (יארצייט) מתעדכן אוטומטית';
+}
+
+

@@ -234,6 +234,27 @@ export const DataStore = {
     return calendar;
   },
 
+  async updateCalendar(calendarId: string, updates: Partial<CalendarProject>): Promise<CalendarProject | null> {
+    try {
+      const { data } = await supabase
+        .from('calendars')
+        .update(updates)
+        .eq('id', calendarId)
+        .select()
+        .single();
+      if (data) return data as CalendarProject;
+    } catch (err) {
+      console.error('Supabase updateCalendar error:', err);
+    }
+    const cache = getCache();
+    const idx = cache.calendars.findIndex(c => c.id === calendarId);
+    if (idx !== -1) {
+      cache.calendars[idx] = { ...cache.calendars[idx], ...updates };
+      return cache.calendars[idx];
+    }
+    return null;
+  },
+
   async deleteCalendar(calendarId: string) {
     try {
       // 1. Delete all deceased in calendar

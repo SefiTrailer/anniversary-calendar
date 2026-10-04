@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Calendar, Plus, ShieldCheck } from 'lucide-react';
+import { formatCalendarDisplayName } from '@/lib/hebrew-calendar';
 
 interface NewCalendarModalProps {
   isOpen: boolean;
@@ -21,6 +22,8 @@ export const NewCalendarModal: React.FC<NewCalendarModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
+
+  const previewDisplayName = formatCalendarDisplayName(name.trim() || 'כהן');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,35 +62,41 @@ export const NewCalendarModal: React.FC<NewCalendarModalProps> = ({
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              כל פרויקט יומן מתנהל במרחב עצמאי לחלוטין <strong>ללא ערבוב מידע</strong> בין משפחות. כיוצר היומן, תוגדר אוטומטית כ<strong>מנהל היומן</strong> עם סמכויות מלאות.
+              כל פרויקט יומן מתנהל במרחב עצמאי לחלוטין <strong>ללא ערבוב מידע</strong> בין משפחות. כיוצר היומן, שמך (<strong>{currentUserName}</strong>) יופיע בתיאור היומן כבעל היומן.
             </p>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              שם פרויקט היומן <span className="text-red-500">*</span>
+              שם המשפחה או שם היומן <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               required
-              placeholder="למשל: יומן משפחת כהן המורחבת"
+              placeholder="למשל: כהן (יוצג כ: ימי זיכרון - יומן משפחת כהן)"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
             />
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              שם היומן שיוצג ב-Google Calendar ובמערכת: <strong className="text-slate-800">{previewDisplayName}</strong>
+            </p>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              תיאור קצר (אופציונלי)
+              תיאור היומן (אופציונלי — שם בעל היומן מתווסף אוטומטית)
             </label>
             <textarea
               rows={2}
-              placeholder="למשל: ימי השנה של אבות המשפחה מצד סבא יוסף וסבתא מרים"
+              placeholder={`למשל: ימי השנה של אבות המשפחה | בעל היומן: ${currentUserName}`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              בתיאור היומן יופיע אוטומטית: <strong className="text-slate-700">בעל היומן: {currentUserName}</strong>
+            </p>
           </div>
 
           <div className="pt-2 flex justify-end gap-2">

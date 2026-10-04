@@ -24,6 +24,7 @@ import {
   extractBranchHierarchy,
   matchesBranchHierarchyFilter,
   getGenerationRelationInfo,
+  formatCalendarDisplayName,
 } from '@/lib/hebrew-calendar';
 
 interface ShareCalendarModalProps {
@@ -57,6 +58,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   );
   const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
   const [maxGen, setMaxGen] = useState<string>('all');
+  const [customCalName, setCustomCalName] = useState<string>('');
   const [shareRole, setShareRole] = useState<'member' | 'editor'>('member');
   const [copiedWebLink, setCopiedWebLink] = useState(false);
   const [copiedSyncLink, setCopiedSyncLink] = useState(false);
@@ -80,8 +82,16 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     }
   }, [branches]);
 
+  React.useEffect(() => {
+    if (calendar?.name) {
+      setCustomCalName(formatCalendarDisplayName(calendar.name));
+    }
+  }, [calendar?.name, isOpen]);
+
   if (!isOpen || !calendar) return null;
 
+  const defaultDisplayName = formatCalendarDisplayName(calendar.name);
+  const effectiveCalName = customCalName.trim() || defaultDisplayName;
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://yomzikaron.vercel.app';
 
   // Toggle single branch
@@ -128,10 +138,11 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const protocol = origin.startsWith('https') ? 'webcal:' : 'http:';
   const cleanHost = origin.replace(/^https?:\/\//, '');
   const effectiveToken = feedToken && feedToken !== 'shared' ? feedToken : calendar.id;
-  const syncQuery = new URLSearchParams({ v: '3' });
+  const syncQuery = new URLSearchParams({ v: '4' });
   if (!isAllSelected && selectedBranchIds.length > 0) syncQuery.set('branches', branchParam);
   if (selectedSubBranch !== 'all') syncQuery.set('subBranch', selectedSubBranch);
   if (maxGen !== 'all') syncQuery.set('maxGen', maxGen);
+  if (effectiveCalName !== defaultDisplayName) syncQuery.set('calName', effectiveCalName);
   const syncQueryStr = syncQuery.toString();
   const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
   const httpsSyncUrl = `${origin}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
@@ -163,7 +174,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
       : selectedBranchNames.join(' + ');
     const genLabel = maxGen !== 'all' ? ` • עד דור ${maxGen}` : ' • כל הדורות';
     const roleLabel = shareRole === 'editor' ? 'כולל הרשאת עריכה והוספה' : 'צפייה וסנכרון ליומן';
-    const text = `שלום! מצורף קישור ליומן הזיכרון והיארצייט המשפחתי עבור *${calendar.name}* (ענף: ${branchLabel}${genLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מציג את תאריכי היארצייט העבריים, אזכרות קרובות, ואפשרות להוסיף ישירות ליומן Google שלך בלחיצה אחת (כל שינוי ביומן מתעדכן אוטומטית אצל כולם).`;
+    const text = `שלום! מצורף קישור ליומן הזיכרון והיארצייט המשפחתי עבור *${effectiveCalName}* (ענף: ${branchLabel}${genLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מציג את תאריכי היארצייט העבריים, אזכרות קרובות, ואפשרות להוסיף ישירות ליומן Google שלך בלחיצה אחת (כל שינוי ביומן מתעדכן אוטומטית אצל כולם).`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };
@@ -212,7 +223,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 שיתוף יומן וניהול הרשאות (צפייה / עריכה)
               </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                {calendar.name} &bull; סנכרון אוטומטי ליומני Google של כל המצורפים
+                {formatCalendarDisplayName(calendar.name, customCalName)} &bull; בעל היומן: {calendar.created_by_user_name || 'מנהל היומן'}
               </p>
             </div>
           </div>
@@ -235,6 +246,34 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 כל הוספת שם או עדכון תאריך שמבוצעים על ידך (או על ידי מי שנתת לו הרשאת עריכה) מתעדכנים אוטומטית באתר ובכל יומני Google של כל המשתמשים שחיברו את היומן, ללא צורך בפעולה מצדם.
               </span>
             </div>
+          </div>
+
+          {/* Customizable Calendar Display Name */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-bold text-slate-800">
+                שם היומן כפי שיופיע אצל מקבלי הקישור ב-Google Calendar:
+              </label>
+              {customCalName.trim() !== defaultDisplayName && (
+                <button
+                  type="button"
+                  onClick={() => setCustomCalName(defaultDisplayName)}
+                  className="text-[11px] text-blue-600 hover:underline font-bold cursor-pointer"
+                >
+                  אפס לברירת מחדל ({defaultDisplayName})
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={customCalName}
+              onChange={(e) => setCustomCalName(e.target.value)}
+              placeholder={defaultDisplayName}
+              className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <p className="text-[11px] text-slate-500">
+              בתיאור היומן ב-Google Calendar יופיע אוטומטית: <strong className="text-slate-700">בעל היומן: {calendar.created_by_user_name || 'מנהל היומן'}</strong>
+            </p>
           </div>
 
           {/* Step 1: Branch, Sub-Branch & Generation Depth Selection */}
