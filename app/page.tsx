@@ -48,6 +48,8 @@ import {
   FolderTree,
   List,
   GitCommit,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -96,6 +98,7 @@ export default function HomePage() {
   const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
   const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
+  const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
 
   const [loading, setLoading] = useState(true);
 
@@ -784,11 +787,6 @@ export default function HomePage() {
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-9 text-white shadow-xl relative overflow-hidden border border-slate-800">
               <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                 <div className="space-y-3 max-w-2xl">
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
-                    <Flame className="w-3.5 h-3.5 text-amber-400" />
-                    <span>היום: {todayHebrewDate}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
-                  </div>
-
                   <h2 className="text-2xl sm:text-4xl font-black font-serif text-slate-50">
                     {sharedViewData.calendar.name}
                   </h2>
@@ -821,100 +819,132 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Upcoming Yahrzeits for Shared Branches */}
+            {/* Upcoming Yahrzeits for Shared Branches - Unified Collapsible Div */}
             {upcomingThisMonth.length > 0 && (
-              <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
-                <div className="flex items-center justify-between">
+              <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl overflow-hidden shadow-sm">
+                <div
+                  onClick={() => setIsUpcomingOpen((prev) => !prev)}
+                  className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6 cursor-pointer hover:bg-amber-100/40 transition select-none"
+                >
                   <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
-                    <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
-                    <span className="font-serif font-black text-lg">
+                    <BellRing className="w-5 h-5 text-amber-600 animate-bounce shrink-0" />
+                    <span className="font-serif font-black text-base sm:text-lg">
                       אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})
                     </span>
                   </div>
-                  <span className="text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                    זכרון להולכים
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
+                      זכרון להולכים
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsUpcomingOpen((prev) => !prev);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white text-amber-950 border border-amber-300 text-xs font-bold shadow-2xs transition cursor-pointer"
+                      title={isUpcomingOpen ? 'סגור רשימת תאריכים קרובים' : 'פתח רשימת תאריכים קרובים'}
+                    >
+                      <span>{isUpcomingOpen ? 'סגור רשימה' : 'פתח רשימה'}</span>
+                      {isUpcomingOpen ? (
+                        <ChevronUp className="w-4 h-4 text-amber-700" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-amber-700" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
-                    const genInfo = getGenerationRelationInfo(person, userGeneration);
-                    return (
-                      <div
-                        key={person.id}
-                        onClick={() => setLineagePerson(person)}
-                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 cursor-pointer hover:border-amber-400 hover:shadow-sm transition"
-                        title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="w-full">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-lg font-black text-slate-900 leading-tight font-serif">
-                                {getDeceasedFullName(person)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setLineagePerson(person)}
-                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
-                                  genInfo.isDirect
-                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                                    : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
-                                }`}
-                                title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                              >
-                                <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                                <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                              </button>
-                            </div>
-                            {person.father_or_mother_name && (
-                              <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                                לעילוי נשמת: {formatLeiluyNishmat(person)}
-                              </span>
-                            )}
-                            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
-                              <div className="flex flex-col">
-                                <span className="text-sm font-bold text-amber-900 block font-serif">
-                                  {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
-                                </span>
-                                <span className="text-[11px] text-slate-500 font-sans">
-                                  ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                                    day: 'numeric',
-                                    month: 'numeric',
-                                    year: 'numeric',
-                                  })})
+                {isUpcomingOpen && (
+                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-1 border-t border-amber-200/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
+                      {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
+                        const genInfo = getGenerationRelationInfo(person, userGeneration);
+                        return (
+                          <div
+                            key={person.id}
+                            onClick={() => setLineagePerson(person)}
+                            className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 cursor-pointer hover:border-amber-400 hover:shadow-sm transition h-full"
+                            title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
+                          >
+                            <div className="flex flex-col flex-1 justify-between gap-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-lg font-black text-slate-900 leading-tight font-serif">
+                                      {getDeceasedFullName(person)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLineagePerson(person);
+                                      }}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
+                                        genInfo.isDirect
+                                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                                          : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
+                                      }`}
+                                      title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                                    >
+                                      <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                                    </button>
+                                  </div>
+                                  {person.father_or_mother_name && (
+                                    <span className="text-[11px] text-slate-600 font-semibold block mt-1 font-serif">
+                                      לעילוי נשמת: {formatLeiluyNishmat(person)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                                  {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
                                 </span>
                               </div>
+
+                              <div className="flex items-center justify-between pt-2 mt-auto border-t border-amber-100/70">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-amber-900 block font-serif">
+                                    {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 font-sans">
+                                    ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                      day: 'numeric',
+                                      month: 'numeric',
+                                      year: 'numeric',
+                                    })})
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-500 font-serif">
+                                {formatAnniversaryYearText(upcoming.yearsPassed)}
+                              </span>
+                              <a
+                                href={getGoogleCalendarDirectAddUrl(
+                                  person,
+                                  upcoming,
+                                  sharedViewData.branches.find((b) => b.id === person.branch_id)?.name,
+                                  typeof window !== 'undefined' ? window.location.origin : ''
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                              >
+                                <CalendarIcon className="w-3 h-3 text-blue-600" />
+                                <span>הוסף ליומן</span>
+                              </a>
                             </div>
                           </div>
-
-                          <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
-                            {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
-                          </span>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold text-slate-500 font-serif">
-                            {formatAnniversaryYearText(upcoming.yearsPassed)}
-                          </span>
-                          <a
-                          href={getGoogleCalendarDirectAddUrl(
-                            person,
-                            upcoming,
-                            sharedViewData.branches.find(b => b.id === person.branch_id)?.name,
-                            typeof window !== 'undefined' ? window.location.origin : ''
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
-                        >
-                          <CalendarIcon className="w-3 h-3 text-blue-600" />
-                          <span>הוסף ליומן</span>
-                        </a>
-                      </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -945,12 +975,6 @@ export default function HomePage() {
               <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
               <div className="relative z-10 max-w-3xl mx-auto space-y-6">
-                {/* Hebrew & Gregorian Date Pill */}
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
-                  <Flame className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
-                </div>
-
                 <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight font-serif text-slate-50">
                   נר נשמה &bull; לוח הנצחה וימי פטירה משפחתיים
                 </h2>
@@ -1085,10 +1109,6 @@ export default function HomePage() {
             {/* Hub Banner */}
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold font-serif">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>היום: {todayHebrewDate}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
-                </div>
                 <h2 className="text-2xl sm:text-3xl font-black font-serif text-slate-50">
                   מרכז היומנים המשפחתיים שלי
                 </h2>
@@ -1270,12 +1290,6 @@ export default function HomePage() {
 
               <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                 <div className="space-y-3 max-w-2xl">
-                  {/* Hebrew & Gregorian Date Pill */}
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md border border-white/10 shadow-xs font-serif">
-                    <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                    <span>היום: {todayHebrewDate || 'לוח השנה העברי'}{todayGregorianDate ? ` (${todayGregorianDate})` : ''}</span>
-                  </div>
-
                   <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
                     {currentCalendar.name}
                   </h2>
@@ -1320,7 +1334,136 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* View Mode Navigation Tabs & 1-Click Sync Bar */}
+            {/* 30-Day Upcoming Yahrzeits Highlight Ribbon - Unified Collapsible Div */}
+            {upcomingThisMonth.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl overflow-hidden shadow-sm">
+                <div
+                  onClick={() => setIsUpcomingOpen((prev) => !prev)}
+                  className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6 cursor-pointer hover:bg-amber-100/40 transition select-none"
+                >
+                  <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
+                    <BellRing className="w-5 h-5 text-amber-600 animate-bounce shrink-0" />
+                    <span className="font-serif font-black text-base sm:text-lg">
+                      אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
+                      זכרון להולכים
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsUpcomingOpen((prev) => !prev);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white text-amber-950 border border-amber-300 text-xs font-bold shadow-2xs transition cursor-pointer"
+                      title={isUpcomingOpen ? 'סגור רשימת תאריכים קרובים' : 'פתח רשימת תאריכים קרובים'}
+                    >
+                      <span>{isUpcomingOpen ? 'סגור רשימה' : 'פתח רשימה'}</span>
+                      {isUpcomingOpen ? (
+                        <ChevronUp className="w-4 h-4 text-amber-700" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-amber-700" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {isUpcomingOpen && (
+                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-1 border-t border-amber-200/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
+                      {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
+                        const genInfo = getGenerationRelationInfo(person, userGeneration);
+                        return (
+                          <div
+                            key={person.id}
+                            onClick={() => setLineagePerson(person)}
+                            className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition cursor-pointer hover:border-amber-400 h-full"
+                            title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
+                          >
+                            <div className="flex flex-col flex-1 justify-between gap-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-lg font-black text-slate-900 leading-tight font-serif">
+                                      {getDeceasedFullName(person)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLineagePerson(person);
+                                      }}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
+                                        genInfo.isDirect
+                                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                                          : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
+                                      }`}
+                                      title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                                    >
+                                      <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                                    </button>
+                                  </div>
+                                  {person.father_or_mother_name && (
+                                    <span className="text-[11px] text-slate-600 font-semibold block mt-1 font-serif">
+                                      לעילוי נשמת: {formatLeiluyNishmat(person)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                                  {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 mt-auto border-t border-amber-100/70">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-amber-900 block font-serif">
+                                    {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 font-sans">
+                                    ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                      day: 'numeric',
+                                      month: 'numeric',
+                                      year: 'numeric',
+                                    })})
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-500 font-serif">
+                                {formatAnniversaryYearText(upcoming.yearsPassed)}
+                              </span>
+                              <a
+                                href={getGoogleCalendarDirectAddUrl(
+                                  person,
+                                  upcoming,
+                                  branches.find((b) => b.id === person.branch_id)?.name,
+                                  typeof window !== 'undefined' ? window.location.origin : ''
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                              >
+                                <CalendarIcon className="w-3 h-3 text-blue-600" />
+                                <span>הוסף ליומן</span>
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* View Mode Navigation Tabs & 1-Click Sync Bar (Positioned directly above the list it controls) */}
             <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
               {/* Tabs */}
               <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl overflow-x-auto">
@@ -1400,101 +1543,6 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-
-            {/* 30-Day Upcoming Yahrzeits Highlight Ribbon */}
-            {upcomingThisMonth.length > 0 && (
-              <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
-                    <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
-                    <span className="font-serif font-black text-lg">אזכרות וימי פטירה ב-30 הימים הקרובים ({upcomingThisMonth.length})</span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                    זכרון להולכים
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
-                    const genInfo = getGenerationRelationInfo(person, userGeneration);
-                    return (
-                      <div
-                        key={person.id}
-                        onClick={() => setLineagePerson(person)}
-                        className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition cursor-pointer hover:border-amber-400"
-                        title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="w-full">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-lg font-black text-slate-900 leading-tight font-serif">
-                                {getDeceasedFullName(person)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setLineagePerson(person)}
-                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
-                                  genInfo.isDirect
-                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                                    : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
-                                }`}
-                                title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                              >
-                                <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                                <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                              </button>
-                            </div>
-                            {person.father_or_mother_name && (
-                              <span className="text-[11px] text-slate-600 font-semibold block mt-0.5 font-serif">
-                                לעילוי נשמת: {formatLeiluyNishmat(person)}
-                              </span>
-                            )}
-                            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-amber-100/70">
-                              <div className="flex flex-col">
-                                <span className="text-sm font-bold text-amber-900 block font-serif">
-                                  {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
-                                </span>
-                                <span className="text-[11px] text-slate-500 font-sans">
-                                  ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                                    day: 'numeric',
-                                    month: 'numeric',
-                                    year: 'numeric',
-                                  })})
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
-                            {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
-                          </span>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold text-slate-500 font-serif">
-                            {formatAnniversaryYearText(upcoming.yearsPassed)}
-                          </span>
-                          <a
-                          href={getGoogleCalendarDirectAddUrl(
-                            person,
-                            upcoming,
-                            branches.find(b => b.id === person.branch_id)?.name,
-                            typeof window !== 'undefined' ? window.location.origin : ''
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
-                        >
-                          <CalendarIcon className="w-3 h-3 text-blue-600" />
-                          <span>הוסף ליומן</span>
-                        </a>
-                      </div>
-                    </div>
-                  );
-                })}
-                </div>
-              </div>
-            )}
 
             {/* View Mode Switching: List / Tree / Missing Rubric */}
             {viewMode === 'list' && (

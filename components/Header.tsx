@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </div>
                 {(todayHebrewDate || todayGregorianDate) ? (
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1 whitespace-nowrap">
                     {todayHebrewDate && (
                       <span className="font-serif font-bold text-amber-950 bg-amber-50/90 border border-amber-200/80 px-2 py-0.5 rounded-md shadow-2xs">
                         {todayHebrewDate}
