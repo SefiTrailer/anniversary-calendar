@@ -342,7 +342,7 @@ export const DataStore = {
         .from('calendar_members')
         .select('*')
         .eq('feed_token', feedToken)
-        .single();
+        .maybeSingle();
 
       if (member) {
         const { data: cal } = await supabase
@@ -355,6 +355,27 @@ export const DataStore = {
           return { membership: member as UserMembership, calendar: cal as CalendarProject };
         }
       }
+
+      // Fallback: if feedToken is a calendar_id or 'shared', resolve calendar directly
+      const calQuery = feedToken === 'shared'
+        ? supabase.from('calendars').select('*').limit(1).maybeSingle()
+        : supabase.from('calendars').select('*').eq('id', feedToken).maybeSingle();
+      const { data: fallbackCal } = await calQuery;
+      if (fallbackCal) {
+        const branches = await this.getBranches(fallbackCal.id);
+        return {
+          calendar: fallbackCal as CalendarProject,
+          membership: {
+            id: 'shared-feed',
+            calendar_id: fallbackCal.id,
+            user_email: fallbackCal.created_by_user_id,
+            user_name: fallbackCal.created_by_user_name || 'יומן משותף',
+            role: 'member',
+            feed_token: feedToken,
+            selected_branch_ids: branches.map(b => b.id),
+          },
+        };
+      }
     } catch {
       // fallback
     }
@@ -365,6 +386,36 @@ export const DataStore = {
     const calendar = cache.calendars.find(c => c.id === membership.calendar_id);
     if (!calendar) return null;
     return { membership, calendar };
+  },
+
+  async getCalendarMembers(calendarId: string): Promise<UserMembership[]> {
+    try {
+      const { data } = await supabase
+        .from('calendar_members')
+        .select('*')
+        .eq('calendar_id', calendarId)
+        .order('created_at', { ascending: true });
+      if (data) return data as UserMembership[];
+    } catch (err) {
+      console.error('Supabase getCalendarMembers error:', err);
+    }
+    return getCache().memberships.filter(m => m.calendar_id === calendarId);
+  },
+
+  async removeMembership(calendarId: string, userEmail: string) {
+    try {
+      await supabase
+        .from('calendar_members')
+        .delete()
+        .eq('calendar_id', calendarId)
+        .eq('user_email', userEmail);
+    } catch (err) {
+      console.error('Supabase removeMembership error:', err);
+    }
+    const cache = getCache();
+    cache.memberships = cache.memberships.filter(
+      m => !(m.calendar_id === calendarId && m.user_email === userEmail)
+    );
   },
 
   async saveMembership(membership: UserMembership) {

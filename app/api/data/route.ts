@@ -28,6 +28,32 @@ export async function GET(request: NextRequest) {
     const allDeceased = await DataStore.getDeceased(calendarId);
     const filteredDeceased = allDeceased.filter(d => branchIds.includes(d.branch_id));
 
+    const invitedRole = searchParams.get('role') === 'editor' ? 'editor' : 'member';
+
+    // If a logged-in user visits the shared link, automatically register/upgrade their membership
+    let userMembership = null;
+    if (userEmail && userEmail !== 'guest@example.com') {
+      const existing = await DataStore.getUserMembership(calendarId, userEmail);
+      const isOwner = calendar.created_by_user_id.toLowerCase() === userEmail.toLowerCase();
+      const effectiveRole = isOwner
+        ? 'admin'
+        : existing?.role === 'admin' || existing?.role === 'editor'
+        ? existing.role
+        : invitedRole;
+
+      userMembership = {
+        id: existing?.id || crypto.randomUUID(),
+        calendar_id: calendarId,
+        user_email: userEmail,
+        user_name: existing?.user_name || userName,
+        role: effectiveRole as 'admin' | 'editor' | 'member',
+        feed_token: existing?.feed_token || crypto.randomUUID(),
+        selected_branch_ids: existing?.selected_branch_ids?.length ? existing.selected_branch_ids : branchIds,
+        user_generation: existing?.user_generation ?? 1,
+      };
+      await DataStore.saveMembership(userMembership);
+    }
+
     // Get owner membership for sync feed token
     const ownerMembership = await DataStore.getUserMembership(calendarId, calendar.created_by_user_id);
 
@@ -36,8 +62,10 @@ export async function GET(request: NextRequest) {
       branches: filteredBranches,
       deceased: filteredDeceased,
       isSharedView: true,
+      shareRole: invitedRole,
+      membership: userMembership,
       selectedBranchIds: branchIds,
-      feedToken: ownerMembership?.feed_token || 'shared',
+      feedToken: userMembership?.feed_token || ownerMembership?.feed_token || calendar.id,
     });
   }
 
@@ -79,10 +107,10 @@ export async function GET(request: NextRequest) {
     const branches = await DataStore.getBranches(calendarId);
     const deceased = await DataStore.getDeceased(calendarId);
 
-    // Fetch or create membership ONLY for this requesting user (protecting all other users' emails/tokens!)
+    // Fetch or create membership ONLY for this requesting user
     let membership = await DataStore.getUserMembership(calendarId, userEmail);
+    const isOwner = calendar.created_by_user_id.toLowerCase() === userEmail.toLowerCase();
     if (!membership) {
-      const isOwner = calendar.created_by_user_id === userEmail;
       membership = {
         id: crypto.randomUUID(),
         calendar_id: calendarId,
@@ -95,17 +123,40 @@ export async function GET(request: NextRequest) {
       await DataStore.saveMembership(membership);
     }
 
+    const members = (isOwner || membership.role === 'admin')
+      ? await DataStore.getCalendarMembers(calendarId)
+      : [];
+
     return NextResponse.json({
       calendar,
       branches,
       deceased,
       membership,
+      members,
       calendars: userCalendars,
     });
   }
 
   // If no calendarId requested, return only the user's calendars list
   return NextResponse.json({ calendars: userCalendars });
+}
+
+async function canUserEditCalendar(calendarId: string, userEmail: string): Promise<boolean> {
+  if (!calendarId || !userEmail) return false;
+  const cal = await DataStore.getCalendar(calendarId);
+  if (!cal) return false;
+  if (cal.created_by_user_id.toLowerCase() === userEmail.toLowerCase()) return true;
+  const m = await DataStore.getUserMembership(calendarId, userEmail);
+  return m?.role === 'admin' || m?.role === 'editor';
+}
+
+async function isCalendarAdmin(calendarId: string, userEmail: string): Promise<boolean> {
+  if (!calendarId || !userEmail) return false;
+  const cal = await DataStore.getCalendar(calendarId);
+  if (!cal) return false;
+  if (cal.created_by_user_id.toLowerCase() === userEmail.toLowerCase()) return true;
+  const m = await DataStore.getUserMembership(calendarId, userEmail);
+  return m?.role === 'admin';
 }
 
 export async function POST(request: NextRequest) {
@@ -116,6 +167,11 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'add_deceased': {
         const { deceased, forceConfirm } = payload;
+        const canEdit = await canUserEditCalendar(deceased.calendar_id, userEmail);
+        if (!canEdit) {
+          return NextResponse.json({ error: 'אין לך הרשאת עריכה ביומן זה (הרשאת צפייה בלבד)' }, { status: 403 });
+        }
+
         const currentDeceasedList = await DataStore.getDeceased(deceased.calendar_id);
 
         // Check for duplicate or date discrepancy unless user explicitly confirmed
@@ -142,6 +198,11 @@ export async function POST(request: NextRequest) {
 
       case 'update_deceased': {
         const { id, updates, forceConfirm } = payload;
+        const canEdit = await canUserEditCalendar(updates.calendar_id, userEmail);
+        if (!canEdit) {
+          return NextResponse.json({ error: 'אין לך הרשאת עריכה ביומן זה (הרשאת צפייה בלבד)' }, { status: 403 });
+        }
+
         const currentDeceasedList = await DataStore.getDeceased(updates.calendar_id);
 
         if (!forceConfirm) {
@@ -161,13 +222,23 @@ export async function POST(request: NextRequest) {
       }
 
       case 'delete_deceased': {
-        const { id } = payload;
+        const { id, calendar_id } = payload;
+        if (calendar_id) {
+          const canEdit = await canUserEditCalendar(calendar_id, userEmail);
+          if (!canEdit) {
+            return NextResponse.json({ error: 'אין לך הרשאת מחיקה ביומן זה' }, { status: 403 });
+          }
+        }
         await DataStore.deleteDeceased(id);
         return NextResponse.json({ success: true });
       }
 
       case 'add_branch': {
         const { calendar_id, name, color } = payload;
+        const canEdit = await canUserEditCalendar(calendar_id, userEmail);
+        if (!canEdit) {
+          return NextResponse.json({ error: 'אין לך הרשאת עריכה ביומן זה' }, { status: 403 });
+        }
         const newBranch = {
           id: crypto.randomUUID(),
           calendar_id,
@@ -180,7 +251,13 @@ export async function POST(request: NextRequest) {
       }
 
       case 'delete_branch': {
-        const { id } = payload;
+        const { id, calendar_id } = payload;
+        if (calendar_id) {
+          const canEdit = await canUserEditCalendar(calendar_id, userEmail);
+          if (!canEdit) {
+            return NextResponse.json({ error: 'אין לך הרשאת עריכה ביומן זה' }, { status: 403 });
+          }
+        }
         await DataStore.deleteBranch(id);
         return NextResponse.json({ success: true });
       }
@@ -231,16 +308,9 @@ export async function POST(request: NextRequest) {
 
       case 'delete_calendar': {
         const { calendarId } = payload;
-        const cal = await DataStore.getCalendar(calendarId);
-        if (!cal) {
-          return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
-        }
-        // Only creator/admin can delete calendar
-        if (cal.created_by_user_id !== userEmail) {
-          const membership = await DataStore.getUserMembership(calendarId, userEmail);
-          if (membership?.role !== 'admin') {
-            return NextResponse.json({ error: 'אין לך הרשאה למחוק יומן זה' }, { status: 403 });
-          }
+        const isAdmin = await isCalendarAdmin(calendarId, userEmail);
+        if (!isAdmin) {
+          return NextResponse.json({ error: 'אין לך הרשאה למחוק יומן זה' }, { status: 403 });
         }
         await DataStore.deleteCalendar(calendarId);
         return NextResponse.json({ success: true });
@@ -255,17 +325,52 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, membership: saved });
       }
 
+      case 'manage_member': {
+        const { calendarId, targetEmail, targetName, role, selectedBranchIds } = payload;
+        const isAdmin = await isCalendarAdmin(calendarId, userEmail);
+        if (!isAdmin) {
+          return NextResponse.json({ error: 'רק מנהל היומן יכול לעדכן הרשאות משתמשים' }, { status: 403 });
+        }
+
+        const cleanEmail = (targetEmail || '').trim().toLowerCase();
+        if (!cleanEmail) {
+          return NextResponse.json({ error: 'נא להזין כתובת אימייל תקינה' }, { status: 400 });
+        }
+
+        const existing = await DataStore.getUserMembership(calendarId, cleanEmail);
+        const allBranches = await DataStore.getBranches(calendarId);
+        const memberRecord = {
+          id: existing?.id || crypto.randomUUID(),
+          calendar_id: calendarId,
+          user_email: cleanEmail,
+          user_name: (targetName || existing?.user_name || cleanEmail.split('@')[0]).trim(),
+          role: (role || 'member') as 'admin' | 'editor' | 'member',
+          feed_token: existing?.feed_token || crypto.randomUUID(),
+          selected_branch_ids: selectedBranchIds || existing?.selected_branch_ids || allBranches.map(b => b.id),
+          user_generation: existing?.user_generation ?? 1,
+        };
+
+        await DataStore.saveMembership(memberRecord);
+        const members = await DataStore.getCalendarMembers(calendarId);
+        return NextResponse.json({ success: true, member: memberRecord, members });
+      }
+
+      case 'remove_member': {
+        const { calendarId, targetEmail } = payload;
+        const isAdmin = await isCalendarAdmin(calendarId, userEmail);
+        if (!isAdmin) {
+          return NextResponse.json({ error: 'רק מנהל היומן יכול להסיר משתמשים' }, { status: 403 });
+        }
+        await DataStore.removeMembership(calendarId, targetEmail);
+        const members = await DataStore.getCalendarMembers(calendarId);
+        return NextResponse.json({ success: true, members });
+      }
+
       case 'bulk_import': {
         const { calendarId, branches, deceased } = payload;
-        const cal = await DataStore.getCalendar(calendarId);
-        if (!cal) {
-          return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
-        }
-        if (cal.created_by_user_id !== userEmail) {
-          const membership = await DataStore.getUserMembership(calendarId, userEmail);
-          if (membership?.role !== 'admin') {
-            return NextResponse.json({ error: 'אין לך הרשאה לייבא נתונים ליומן זה' }, { status: 403 });
-          }
+        const canEdit = await canUserEditCalendar(calendarId, userEmail);
+        if (!canEdit) {
+          return NextResponse.json({ error: 'אין לך הרשאה לייבא נתונים ליומן זה' }, { status: 403 });
         }
 
         const result = await DataStore.bulkImport(calendarId, branches || [], deceased || []);

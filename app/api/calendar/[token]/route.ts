@@ -8,6 +8,7 @@ import {
   getDeceasedFullName,
   formatLineageChainText,
   getGenerationRelationInfo,
+  formatLeiluyNishmat,
 } from '@/lib/hebrew-calendar';
 
 export async function GET(
@@ -23,14 +24,22 @@ export async function GET(
 
   const { membership, calendar } = result;
   const allBranches = await DataStore.getBranches(calendar.id);
+  const allBranchIds = allBranches.map(b => b.id);
   const branchMap = new Map(allBranches.map(b => [b.id, b.name]));
 
   // Get deceased records matching user's selected branches or query branches
   const allDeceased = await DataStore.getDeceased(calendar.id);
   const queryBranches = request.nextUrl.searchParams.get('branches');
-  const targetBranchIds = queryBranches
-    ? queryBranches.split(',').map(s => s.trim()).filter(Boolean)
-    : membership.selected_branch_ids;
+
+  let targetBranchIds: string[];
+  if (queryBranches) {
+    targetBranchIds = queryBranches.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (Array.isArray(membership.selected_branch_ids) && membership.selected_branch_ids.length > 0) {
+    const validSelected = membership.selected_branch_ids.filter(id => allBranchIds.includes(id));
+    targetBranchIds = validSelected.length > 0 ? validSelected : allBranchIds;
+  } else {
+    targetBranchIds = allBranchIds;
+  }
 
   const filteredDeceased = allDeceased.filter(d =>
     targetBranchIds.includes(d.branch_id)
@@ -39,11 +48,15 @@ export async function GET(
   // Initialize iCalendar
   const cal = ical({
     name: `${calendar.name} - ${membership.user_name}`,
-    description: `לוח ימי פטירה (יארצייט) עבור ${membership.user_name}`,
+    description: `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית עבור ${membership.user_name}`,
     timezone: 'Asia/Jerusalem',
     method: ICalCalendarMethod.PUBLISH,
     ttl: 3600, // Re-fetch every 1 hour
   });
+
+  // Dynamic sequence so Google Calendar automatically updates modified dates or names
+  const dynamicSequence = Math.floor(Date.now() / 60000);
+  const nowStamp = new Date();
 
   // Calculate upcoming yahrzeits for the next 10 years for each deceased person
   for (const dec of filteredDeceased) {
@@ -51,7 +64,7 @@ export async function GET(
     const upcomingList = calculateUpcomingYahrzeits(dec, 10);
 
     const fullDisplayName = getDeceasedFullName(dec);
-    const parentName = dec.father_or_mother_name ? ` (${dec.father_or_mother_name})` : '';
+    const leiluyText = formatLeiluyNishmat(dec);
     const originalDateFormatted = formatDisplayDateWithGregorian(
       dec.hebrew_day,
       dec.hebrew_month,
@@ -59,7 +72,7 @@ export async function GET(
       dec.gregorian_original_date
     );
 
-    const genInfo = getGenerationRelationInfo(dec);
+    const genInfo = getGenerationRelationInfo(dec, membership.user_generation ?? 1);
     const relationLine = `קרבה לבעל היומן: ${genInfo.fullDescription}`;
 
     const lineageChain = formatLineageChainText(dec.lineage_path);
@@ -80,11 +93,13 @@ export async function GET(
         start: startDate,
         end: endDate,
         allDay: true,
-        sequence: 1,
-        stamp: new Date(),
+        sequence: dynamicSequence,
+        stamp: nowStamp,
+        lastModified: nowStamp,
         summary: `יארצייט: ${fullDisplayName}${yearsPassedText}`,
         description: [
-          `יום השנה לפטירת ${fullDisplayName}${parentName}`,
+          `יום השנה לפטירת ${fullDisplayName}`,
+          leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
           relationLine,
           lineageChain ? `\n🔗 שרשרת היוחסין:\n${lineageChain}` : '',
           `\n🔗 צפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}`,

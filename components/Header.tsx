@@ -36,6 +36,7 @@ interface HeaderProps {
   currentUser: { email: string; name: string; avatar?: string | null } | null;
   membership: UserMembership | null;
   isAdmin: boolean;
+  canEdit?: boolean;
   userGeneration?: number;
   onUpdateUserGeneration?: (gen: number) => void;
   todayHebrewDate?: string;
@@ -59,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   membership,
   isAdmin,
+  canEdit = isAdmin,
   userGeneration = 1,
   onUpdateUserGeneration,
   todayHebrewDate,
@@ -271,14 +273,16 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
-                    {/* Primary Action: Add Deceased */}
-                    <button
-                      onClick={onOpenAddDeceased}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>הוסף נפטר</span>
-                    </button>
+                    {/* Primary Action: Add Deceased (Admin or Editor Only) */}
+                    {canEdit && (
+                      <button
+                        onClick={onOpenAddDeceased}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>הוסף נפטר</span>
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -311,7 +315,7 @@ export const Header: React.FC<HeaderProps> = ({
                         {currentUser.name}
                       </span>
                       <span className="block text-[10px] text-slate-400 font-medium">
-                        {isAdmin ? 'מנהל יומן' : 'משתמש רשום'}
+                        {isAdmin ? 'מנהל יומן' : canEdit ? 'עורך מורשה' : 'צפייה בלבד'}
                       </span>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 mr-0.5" />
@@ -329,10 +333,15 @@ export const Header: React.FC<HeaderProps> = ({
                               <ShieldCheck className="w-3 h-3" />
                               <span>הרשאת מנהל</span>
                             </>
+                          ) : canEdit ? (
+                            <>
+                              <ShieldCheck className="w-3 h-3" />
+                              <span>הרשאת עריכה</span>
+                            </>
                           ) : (
                             <>
                               <UserCheck className="w-3 h-3" />
-                              <span>חבר משפחה</span>
+                              <span>צפייה בלבד</span>
                             </>
                           )}
                         </div>

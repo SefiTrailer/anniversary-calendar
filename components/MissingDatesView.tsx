@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { DeceasedPerson, FamilyBranch } from '@/lib/types';
-import { getDeceasedFormattedParts, getGenerationRelationInfo, HEBREW_MONTHS_TRANSLATION } from '@/lib/hebrew-calendar';
+import { getDeceasedFormattedParts, getGenerationRelationInfo, HEBREW_MONTHS_TRANSLATION, formatLeiluyNishmat } from '@/lib/hebrew-calendar';
 import { AlertTriangle, Calendar, PlusCircle, Search, Edit3, CheckCircle2, Bookmark, GitCommit } from 'lucide-react';
 
 interface MissingDatesViewProps {
   deceased: DeceasedPerson[];
   branches: FamilyBranch[];
   userGeneration?: number;
+  canEdit?: boolean;
   onEditDeceased: (deceased: DeceasedPerson) => void;
   onOpenLineage?: (person: DeceasedPerson) => void;
 }
@@ -17,6 +18,7 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
   deceased,
   branches,
   userGeneration = 1,
+  canEdit = true,
   onEditDeceased,
   onOpenLineage,
 }) => {
@@ -56,7 +58,7 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
               </h2>
               <p className="text-sm text-slate-600 mt-1 max-w-2xl">
                 כאן מרוכזים כל אבות ואמהות המשפחה המופיעים באילן היוחסין שיום פטירתם המדויק טרם אומת סופית. 
-                בלחיצה על ״השלם תאריך פטירה״ תוכל להזין את היום והחודש ברגע שיימצאו רישומים או תמונת מצבה.
+                {canEdit && ' בלחיצה על ״השלם תאריך פטירה״ תוכל להזין את היום והחודש ברגע שיימצאו רישומים או תמונת מצבה.'}
               </p>
             </div>
           </div>
@@ -119,7 +121,7 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(p => {
             const branch = branchMap.get(p.branch_id);
-            const { cleanTitle, cleanFirstName, cleanLastName, honorific } = getDeceasedFormattedParts(p);
+            const { cleanTitle, cleanFirstName, cleanLastName, honorific, showTitle } = getDeceasedFormattedParts(p);
             const genInfo = getGenerationRelationInfo(p, userGeneration);
 
             return (
@@ -160,28 +162,16 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
                     </span>
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-1.5 flex-wrap">
-                    {cleanTitle && <span className="text-amber-800">{cleanTitle}</span>}
+                  <h3 className="text-base font-bold text-slate-900 mb-1 leading-snug">
+                    {showTitle && cleanTitle && <span className="text-amber-800 ml-1.5">{cleanTitle}</span>}
                     <span>{cleanFirstName}</span>
-                    <span>{cleanLastName}</span>
-                    {honorific && <span className="text-xs text-slate-400 font-normal">{honorific}</span>}
-
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs font-serif ${
-                        genInfo.isDirect
-                          ? 'bg-amber-100 text-amber-950 border-amber-300'
-                          : 'bg-purple-100 text-purple-950 border-purple-300'
-                      }`}
-                      title={genInfo.fullDescription}
-                    >
-                      <GitCommit className={`w-2.5 h-2.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                    </span>
+                    {cleanLastName && <span className="mr-1.5">{cleanLastName}</span>}
+                    {honorific && <span className="text-xs text-slate-400 font-normal mr-1.5">{honorific}</span>}
                   </h3>
 
                   {p.father_or_mother_name && (
                     <p className="text-xs text-slate-500 mb-2">
-                      {p.father_or_mother_name}
+                      לעילוי נשמת: {formatLeiluyNishmat(p)}
                     </p>
                   )}
 
@@ -197,17 +187,19 @@ export const MissingDatesView: React.FC<MissingDatesViewProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditDeceased(p);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all cursor-pointer"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>השלם תאריך פטירה</span>
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditDeceased(p);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>השלם תאריך פטירה</span>
+                  </button>
+                )}
               </div>
             );
           })}

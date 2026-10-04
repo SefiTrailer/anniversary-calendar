@@ -64,6 +64,7 @@ export default function HomePage() {
   const [branches, setBranches] = useState<FamilyBranch[]>([]);
   const [deceased, setDeceased] = useState<DeceasedPerson[]>([]);
   const [membership, setMembership] = useState<UserMembership | null>(null);
+  const [calendarMembers, setCalendarMembers] = useState<UserMembership[]>([]);
   const [userGeneration, setUserGeneration] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ner_neshama_user_generation');
@@ -79,6 +80,7 @@ export default function HomePage() {
     deceased: DeceasedPerson[];
     feedToken: string;
     selectedBranchIds: string[];
+    membership?: UserMembership | null;
   } | null>(null);
 
   // Modals
@@ -97,26 +99,41 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
 
-  // Check for shared link in URL upon mount
+  // Check for shared link in URL upon mount or when currentUser logs in
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
       const isShare = sp.get('share') === 'true' || sp.get('isShare') === 'true';
       const calId = sp.get('calendarId');
       const brParam = sp.get('branches') || '';
+      const roleParam = sp.get('role') || '';
 
       if (isShare && calId) {
-        fetch(`/api/data?isShare=true&calendarId=${calId}&branches=${brParam}`)
+        const q = new URLSearchParams({
+          isShare: 'true',
+          calendarId: calId,
+          branches: brParam,
+        });
+        if (roleParam) q.set('role', roleParam);
+        if (currentUser?.email) {
+          q.set('userEmail', currentUser.email);
+          q.set('userName', currentUser.name);
+        }
+
+        fetch(`/api/data?${q.toString()}`)
           .then((r) => r.json())
           .then((data) => {
             if (data.calendar) {
               setSharedViewData(data);
+              if (data.membership) {
+                setMembership(data.membership);
+              }
             }
           })
           .catch((err) => console.error('Failed to load shared calendar:', err));
       }
     }
-  }, []);
+  }, [currentUser]);
 
   // Initialize User from active Supabase / Google OAuth session or localStorage
   useEffect(() => {
@@ -282,6 +299,7 @@ export default function HomePage() {
         setCurrentCalendar(data.calendar);
         setBranches(data.branches || []);
         setDeceased(data.deceased || []);
+        setCalendarMembers(data.members || []);
         if (data.membership) {
           setMembership(data.membership);
           if (typeof data.membership.user_generation === 'number') {
@@ -309,6 +327,7 @@ export default function HomePage() {
       setBranches([]);
       setDeceased([]);
       setMembership(null);
+      setCalendarMembers([]);
       setLoading(false);
     }
   }, [currentUser]);
@@ -324,6 +343,7 @@ export default function HomePage() {
     setBranches([]);
     setDeceased([]);
     setMembership(null);
+    setCalendarMembers([]);
     loadUserCalendars();
   };
 
@@ -382,6 +402,21 @@ export default function HomePage() {
     if (currentCalendar) {
       await loadCalendarDetails(currentCalendar.id);
     }
+    if (sharedViewData?.calendar) {
+      const brParam = sharedViewData.selectedBranchIds.join(',');
+      const q = new URLSearchParams({
+        isShare: 'true',
+        calendarId: sharedViewData.calendar.id,
+        branches: brParam,
+      });
+      if (currentUser?.email) {
+        q.set('userEmail', currentUser.email);
+        q.set('userName', currentUser.name);
+      }
+      const r = await fetch(`/api/data?${q.toString()}`);
+      const refreshed = await r.json();
+      if (refreshed.calendar) setSharedViewData(refreshed);
+    }
   };
 
   const handleDeleteDeceased = async (id: string) => {
@@ -396,6 +431,72 @@ export default function HomePage() {
     });
     if (currentCalendar) {
       await loadCalendarDetails(currentCalendar.id);
+    }
+    if (sharedViewData?.calendar) {
+      const brParam = sharedViewData.selectedBranchIds.join(',');
+      const q = new URLSearchParams({
+        isShare: 'true',
+        calendarId: sharedViewData.calendar.id,
+        branches: brParam,
+      });
+      if (currentUser?.email) {
+        q.set('userEmail', currentUser.email);
+        q.set('userName', currentUser.name);
+      }
+      const r = await fetch(`/api/data?${q.toString()}`);
+      const refreshed = await r.json();
+      if (refreshed.calendar) setSharedViewData(refreshed);
+    }
+  };
+
+  const handleManageMember = async (
+    memberEmail: string,
+    memberName: string,
+    role: 'admin' | 'editor' | 'member',
+    branchIds: string[]
+  ) => {
+    if (!currentCalendar || !currentUser) return;
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'manage_member',
+        payload: {
+          calendar_id: currentCalendar.id,
+          member_email: memberEmail,
+          member_name: memberName,
+          role,
+          selected_branch_ids: branchIds,
+        },
+        userEmail: currentUser.email,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'שגיאה בעדכון הרשאות');
+    }
+    if (data.members) {
+      setCalendarMembers(data.members);
+    }
+  };
+
+  const handleRemoveMember = async (memberEmail: string) => {
+    if (!currentCalendar || !currentUser) return;
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'remove_member',
+        payload: {
+          calendar_id: currentCalendar.id,
+          member_email: memberEmail,
+        },
+        userEmail: currentUser.email,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.members) {
+      setCalendarMembers(data.members);
     }
   };
 
@@ -573,7 +674,19 @@ export default function HomePage() {
     return `/api/calendar/${membership.feed_token}`;
   }, [membership]);
 
-  const isAdmin = Boolean(currentUser && membership?.role === 'admin');
+  const isAdmin = Boolean(
+    currentUser &&
+      (membership?.role === 'admin' ||
+        currentCalendar?.created_by_user_id === currentUser.email)
+  );
+  const canEdit = Boolean(
+    currentUser &&
+      (isAdmin ||
+        membership?.role === 'editor' ||
+        sharedViewData?.membership?.role === 'admin' ||
+        sharedViewData?.membership?.role === 'editor' ||
+        sharedViewData?.calendar?.created_by_user_id === currentUser.email)
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900 font-sans">
@@ -603,6 +716,7 @@ export default function HomePage() {
         currentUser={currentUser}
         membership={membership}
         isAdmin={isAdmin}
+        canEdit={canEdit}
         userGeneration={userGeneration}
         onUpdateUserGeneration={handleUpdateUserGeneration}
         todayHebrewDate={todayHebrewDate}
@@ -618,21 +732,52 @@ export default function HomePage() {
           <div className="space-y-8">
             {/* Shared View Notice Bar */}
             <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-indigo-950 font-bold">
+              <div className="flex items-center gap-2 text-indigo-950 font-bold flex-wrap">
                 <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>
-                  תצוגת יומן משותפת: מוצגים אך ורק ענפי המשפחה שנבחרו עבורך ({sharedViewData.branches.map((b) => b.name).join(' • ')})
+                  תצוגת יומן משותפת: מוצגים ענפי המשפחה שנבחרו ({sharedViewData.branches.map((b) => b.name).join(' • ')})
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                    canEdit
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-white text-indigo-700 border-indigo-200'
+                  }`}
+                >
+                  {canEdit ? '✏️ הרשאת עריכה פעילה' : '👁️ צפייה בלבד'}
                 </span>
               </div>
-              <button
-                onClick={() => {
-                  setSharedViewData(null);
-                  window.history.replaceState({}, '', '/');
-                }}
-                className="text-indigo-700 hover:text-indigo-900 font-bold hover:underline cursor-pointer"
-              >
-                חזרה לדף הראשי &larr;
-              </button>
+              <div className="flex items-center gap-3">
+                {!currentUser && (
+                  <button
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition cursor-pointer"
+                  >
+                    התחבר לחשבון (לשמירה / עריכה)
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    onClick={() => {
+                      setEditingDeceased(null);
+                      setIsAddModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>הוסף נפטר</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setSharedViewData(null);
+                    window.history.replaceState({}, '', '/');
+                  }}
+                  className="text-indigo-700 hover:text-indigo-900 font-bold hover:underline cursor-pointer"
+                >
+                  חזרה לדף הראשי &larr;
+                </button>
+              </div>
             </div>
 
             {/* Shared Calendar Hero */}
@@ -649,7 +794,7 @@ export default function HomePage() {
                   </h2>
 
                   <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
-                    יומן ימי פטירה (יארצייט) מסונכרן. ענפים משותפים: {sharedViewData.branches.map((b) => b.name).join(', ')}.
+                    יומן ימי פטירה (יארצייט) מסונכרן אוטומטית. ענפים משותפים: {sharedViewData.branches.map((b) => b.name).join(', ')}.
                   </p>
                 </div>
 
@@ -662,7 +807,7 @@ export default function HomePage() {
                   <a
                     href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
                       `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
-                        typeof window !== 'undefined' ? window.location.host : 'yahrzeit-calendar.vercel.app'
+                        typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app'
                       }/api/calendar/${sharedViewData.feedToken}?branches=${sharedViewData.selectedBranchIds.join(',')}`
                     )}`}
                     target="_blank"
@@ -773,13 +918,17 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Read-Only Deceased List */}
+            {/* Deceased List (Read-Only for viewers, Editable for editors/admins) */}
             <DeceasedList
               deceased={sharedViewData.deceased}
               branches={sharedViewData.branches}
-              isAdmin={false}
-              onEdit={() => {}}
-              onDelete={async () => {}}
+              isAdmin={canEdit}
+              userGeneration={userGeneration}
+              onEdit={(person) => {
+                setEditingDeceased(person);
+                setIsAddModalOpen(true);
+              }}
+              onDelete={handleDeleteDeceased}
               onOpenLineage={setLineagePerson}
             />
           </div>
@@ -1352,7 +1501,7 @@ export default function HomePage() {
               <DeceasedList
                 deceased={deceased}
                 branches={branches}
-                isAdmin={isAdmin}
+                isAdmin={canEdit}
                 userGeneration={userGeneration}
                 onEdit={(person) => {
                   setEditingDeceased(person);
@@ -1368,6 +1517,7 @@ export default function HomePage() {
                 deceased={deceased}
                 branches={branches}
                 userGeneration={userGeneration}
+                canEdit={canEdit}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
                   setIsAddModalOpen(true);
@@ -1385,6 +1535,7 @@ export default function HomePage() {
                 deceased={deceased}
                 branches={branches}
                 userGeneration={userGeneration}
+                canEdit={canEdit}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
                   setIsAddModalOpen(true);
@@ -1413,20 +1564,22 @@ export default function HomePage() {
         onSuccess={handleAuthSuccess}
       />
 
+      {(currentCalendar || sharedViewData?.calendar) && (
+        <DeceasedModal
+          isOpen={isAddModalOpen}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setEditingDeceased(null);
+          }}
+          onSave={handleSaveDeceased}
+          branches={currentCalendar ? branches : (sharedViewData?.branches || [])}
+          initialData={editingDeceased}
+          calendarId={(currentCalendar || sharedViewData?.calendar)!.id}
+        />
+      )}
+
       {currentCalendar && (
         <>
-          <DeceasedModal
-            isOpen={isAddModalOpen}
-            onClose={() => {
-              setIsAddModalOpen(false);
-              setEditingDeceased(null);
-            }}
-            onSave={handleSaveDeceased}
-            branches={branches}
-            initialData={editingDeceased}
-            calendarId={currentCalendar.id}
-          />
-
           <BranchManagerModal
             isOpen={isBranchesModalOpen}
             onClose={() => setIsBranchesModalOpen(false)}
@@ -1453,6 +1606,10 @@ export default function HomePage() {
             branches={branches}
             deceased={deceased}
             feedToken={membership?.feed_token}
+            isAdmin={isAdmin}
+            members={calendarMembers}
+            onManageMember={handleManageMember}
+            onRemoveMember={handleRemoveMember}
           />
 
           <GemImportModal

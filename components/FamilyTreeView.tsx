@@ -6,6 +6,7 @@ import {
   formatDisplayDateWithGregorian,
   getDeceasedFormattedParts,
   getGenerationRelationInfo,
+  formatLeiluyNishmat,
 } from '@/lib/hebrew-calendar';
 import { isHolocaustVictim } from '@/components/DeceasedList';
 import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame } from 'lucide-react';
@@ -14,6 +15,7 @@ interface FamilyTreeViewProps {
   deceased: DeceasedPerson[];
   branches: FamilyBranch[];
   userGeneration?: number;
+  canEdit?: boolean;
   onEditDeceased: (deceased: DeceasedPerson) => void;
   onAddDeceased: (initialData?: Partial<DeceasedPerson>) => void;
   onOpenLineage?: (person: DeceasedPerson) => void;
@@ -23,6 +25,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
   deceased,
   branches,
   userGeneration = 1,
+  canEdit = true,
   onEditDeceased,
   onAddDeceased,
   onOpenLineage,
@@ -191,7 +194,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                 {genPersons.map((p) => {
                   const branch = branchMap.get(p.branch_id);
                   const isMissingDate = !p.hebrew_day || !p.hebrew_month;
-                  const { cleanTitle, cleanFirstName, cleanLastName, honorific } = getDeceasedFormattedParts(p);
+                  const { cleanTitle, cleanFirstName, cleanLastName, honorific, showTitle } = getDeceasedFormattedParts(p);
                   const genInfo = getGenerationRelationInfo(p, userGeneration);
 
                   return (
@@ -249,27 +252,15 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
 
                         {/* Person Name & Title */}
                         <div className="mb-2">
-                          <h3 className="text-base font-bold text-slate-900 group-hover:text-amber-700 transition-colors flex items-center gap-1.5 flex-wrap">
-                            {cleanTitle && <span className="text-amber-700 font-semibold">{cleanTitle}</span>}
+                          <h3 className="text-base font-bold text-slate-900 group-hover:text-amber-700 transition-colors leading-snug">
+                            {showTitle && cleanTitle && <span className="text-amber-700 font-semibold ml-1.5">{cleanTitle}</span>}
                             <span>{cleanFirstName}</span>
-                            <span>{cleanLastName}</span>
-                            {honorific && <span className="text-xs text-slate-400 font-normal">{honorific}</span>}
-
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border shadow-2xs font-serif ${
-                                genInfo.isDirect
-                                  ? 'bg-amber-100 text-amber-950 border-amber-300'
-                                  : 'bg-purple-100 text-purple-950 border-purple-300'
-                              }`}
-                              title={genInfo.fullDescription}
-                            >
-                              <GitCommit className={`w-2.5 h-2.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                              <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                            </span>
+                            {cleanLastName && <span className="mr-1.5">{cleanLastName}</span>}
+                            {honorific && <span className="text-xs text-slate-400 font-normal mr-1.5">{honorific}</span>}
                           </h3>
                           {p.father_or_mother_name && (
                             <p className="text-xs text-slate-500 mt-0.5">
-                              {p.father_or_mother_name}
+                              לעילוי נשמת: {formatLeiluyNishmat(p)}
                             </p>
                           )}
                         </div>
@@ -287,7 +278,7 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                         {isMissingDate ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 group-hover:bg-amber-100 transition-colors">
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                            <span>ללא תאריך • לחץ להשלמה</span>
+                            <span>{canEdit ? 'ללא תאריך • לחץ להשלמה' : 'ללא תאריך מאומת'}</span>
                           </span>
                         ) : (
                           <div className="flex items-center gap-2 flex-wrap">
@@ -297,29 +288,22 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
                                 {formatDisplayDateWithGregorian(p.hebrew_day, p.hebrew_month, p.hebrew_year, p.gregorian_original_date)}
                               </span>
                             </span>
-                            <span
-                              className={`text-[10px] font-black px-1.5 py-0.2 rounded font-serif border ${
-                                genInfo.isDirect
-                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                  : 'bg-purple-50 text-purple-900 border-purple-200'
-                              }`}
-                            >
-                              דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}
-                            </span>
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditDeceased(p);
-                          }}
-                          className="text-slate-400 hover:text-blue-700 transition-colors p-1 rounded-md hover:bg-slate-100 cursor-pointer"
-                          title="ערוך פרטי נפטר"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditDeceased(p);
+                            }}
+                            className="text-slate-400 hover:text-blue-700 transition-colors p-1 rounded-md hover:bg-slate-100 cursor-pointer"
+                            title="ערוך פרטי נפטר"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

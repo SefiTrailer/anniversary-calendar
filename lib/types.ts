@@ -45,7 +45,7 @@ export interface UserMembership {
   calendar_id: string;
   user_email: string;
   user_name: string;
-  role: 'admin' | 'member';
+  role: 'admin' | 'editor' | 'member';
   feed_token: string;
   selected_branch_ids: string[];
   user_generation?: number;
