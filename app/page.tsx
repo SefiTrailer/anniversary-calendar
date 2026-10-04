@@ -661,10 +661,10 @@ export default function HomePage() {
 
   const webcalFeedUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    const host = typeof window !== 'undefined' ? window.location.host : 'yahrzeit-calendar.vercel.app';
+    const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    return `${protocol}//${host}/api/calendar/${membership.feed_token}`;
+    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics`;
   }, [membership]);
 
   const googleCalendarSubscribeUrl = useMemo(() => {
@@ -674,7 +674,7 @@ export default function HomePage() {
 
   const icsDownloadUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    return `/api/calendar/${membership.feed_token}`;
+    return `/api/calendar/${membership.feed_token}.ics`;
   }, [membership]);
 
   const isAdmin = Boolean(

@@ -16,7 +16,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
-  const { token } = await params;
+  const { token: rawToken } = await params;
+  const token = rawToken.replace(/\.ics$/i, '');
 
   const result = await DataStore.getMembershipByToken(token);
   if (!result) {
@@ -59,6 +60,7 @@ export async function GET(
   const userGen = membership.user_generation ?? 1;
 
   const filteredDeceased = allDeceased.filter(d => {
+    if (!d.hebrew_day || !d.hebrew_month) return false;
     if (!targetBranchIds.includes(d.branch_id)) return false;
 
     if (activeSubBranches.length > 0) {
@@ -74,23 +76,23 @@ export async function GET(
     return true;
   });
 
-  // Initialize iCalendar
+  // Initialize iCalendar (omit timezone so DTSTAMP is strictly UTC with 'Z' per RFC 5545, and set X-WR-TIMEZONE)
   const cal = ical({
     name: `${calendar.name} - ${membership.user_name}`,
     description: `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית עבור ${membership.user_name}`,
-    timezone: 'Asia/Jerusalem',
     method: ICalCalendarMethod.PUBLISH,
     ttl: 3600, // Re-fetch every 1 hour
+    x: [['X-WR-TIMEZONE', 'Asia/Jerusalem']],
   });
 
   // Dynamic sequence so Google Calendar automatically updates modified dates or names
   const dynamicSequence = Math.floor(Date.now() / 60000);
   const nowStamp = new Date();
 
-  // Calculate upcoming yahrzeits for the next 10 years for each deceased person
+  // Calculate upcoming yahrzeits for the next 3 years (rolling window, keeps feed fast & well under Google's 1MB limit)
   for (const dec of filteredDeceased) {
     const branchName = branchMap.get(dec.branch_id) || 'כללי';
-    const upcomingList = calculateUpcomingYahrzeits(dec, 10);
+    const upcomingList = calculateUpcomingYahrzeits(dec, 3);
 
     const fullDisplayName = getDeceasedFullName(dec);
     const leiluyText = formatLeiluyNishmat(dec);
@@ -104,7 +106,12 @@ export async function GET(
     const genInfo = getGenerationRelationInfo(dec, membership.user_generation ?? 1);
     const relationLine = `קרבה לבעל היומן: ${genInfo.fullDescription}`;
 
-    const lineageChain = formatLineageChainText(dec.lineage_path);
+    // Keep lineage chain concise inside the ICS file so large 25-gen trees don't bloat the feed past 1MB
+    const rawPath = Array.isArray(dec.lineage_path) ? dec.lineage_path : [];
+    const lineageChain =
+      rawPath.length > 6
+        ? `${rawPath.slice(0, 3).map((s: any) => s.name || s).join(' ➔ ')} ➔ ... (${rawPath.length} דורות) ... ➔ ${rawPath.slice(-2).map((s: any) => s.name || s).join(' ➔ ')}`
+        : formatLineageChainText(dec.lineage_path);
     const lineageUrl = `${request.nextUrl.origin}/?lineage=${dec.id}`;
 
     for (const upcoming of upcomingList) {
@@ -130,8 +137,8 @@ export async function GET(
           `יום השנה לפטירת ${fullDisplayName}`,
           leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
           relationLine,
-          lineageChain ? `\n🔗 שרשרת היוחסין:\n${lineageChain}` : '',
-          `\n🔗 צפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}`,
+          lineageChain ? `\nשרשרת היוחסין:\n${lineageChain}` : '',
+          `\nצפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}`,
           `\nתאריך עברי מקורי: ${originalDateFormatted}`,
           `ענף משפחתי: ${branchName}`,
           dec.notes ? `הערות ומנהגים: ${dec.notes}` : '',
@@ -139,7 +146,6 @@ export async function GET(
         ]
           .filter(Boolean)
           .join('\n'),
-        location: dec.notes?.includes('קבור') || dec.notes?.includes('מנוחת') ? dec.notes : undefined,
         url: lineageUrl,
       });
     }
@@ -151,8 +157,8 @@ export async function GET(
     status: 200,
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': `inline; filename="yahrzeit-calendar.ics"`,
-      'Cache-Control': 'no-cache, no-store, max-age=0, must-revalidate',
+      'Cache-Control': 'public, max-age=60, s-maxage=60, must-revalidate',
+      'Access-Control-Allow-Origin': '*',
     },
   });
 }

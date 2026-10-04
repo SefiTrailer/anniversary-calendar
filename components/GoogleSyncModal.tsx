@@ -106,11 +106,8 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   if (!isOpen) return null;
 
   const token = membership?.feed_token || 'demo-token-default';
-  const queryParams = new URLSearchParams();
-  if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
-  if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
-  const queryString = queryParams.toString();
-  const httpsUrl = `${origin}/api/calendar/${token}${queryString ? `?${queryString}` : ''}`;
+  const httpsUrl = `${origin}/api/calendar/${token}.ics`;
+  const webcalUrl = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics`;
 
   const toggleBranch = async (branchId: string) => {
     const updated = selectedBranches.includes(branchId)
@@ -147,7 +144,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   };
 
   const googleCalendarSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
-    httpsUrl
+    webcalUrl
   )}`;
 
   return (

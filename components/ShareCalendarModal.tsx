@@ -124,11 +124,17 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const maxGenParam = maxGen !== 'all' ? `&maxGen=${encodeURIComponent(maxGen)}` : '';
   const webShareUrl = `${origin}/?share=true&calendarId=${calendar.id}&branches=${branchParam}${subBranchParam}${maxGenParam}${roleParam}`;
 
-  // Generate iCal / WebCal sync link
+  // Generate iCal / WebCal sync link (only include query params if a specific partial filter is chosen)
   const protocol = origin.startsWith('https') ? 'webcal:' : 'http:';
   const cleanHost = origin.replace(/^https?:\/\//, '');
   const effectiveToken = feedToken && feedToken !== 'shared' ? feedToken : calendar.id;
-  const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}?branches=${branchParam}${subBranchParam}${maxGenParam}`;
+  const syncQuery = new URLSearchParams();
+  if (!isAllSelected && selectedBranchIds.length > 0) syncQuery.set('branches', branchParam);
+  if (selectedSubBranch !== 'all') syncQuery.set('subBranch', selectedSubBranch);
+  if (maxGen !== 'all') syncQuery.set('maxGen', maxGen);
+  const syncQueryStr = syncQuery.toString();
+  const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
+  const httpsSyncUrl = `${origin}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
   const directGoogleAddUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
 
   // Copy helper
@@ -487,10 +493,10 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 </a>
 
                 <button
-                  onClick={() => handleCopy(webcalUrl, 'sync')}
+                  onClick={() => handleCopy(httpsSyncUrl, 'sync')}
                   className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl font-bold text-xs transition shrink-0 cursor-pointer"
                 >
-                  {copiedSyncLink ? 'הועתק!' : 'העתק WebCal'}
+                  {copiedSyncLink ? 'הועתק!' : 'העתק URL ליומן'}
                 </button>
               </div>
             </div>

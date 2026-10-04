@@ -336,7 +336,8 @@ export const DataStore = {
     cache.deceased = cache.deceased.filter(d => d.id !== id);
   },
 
-  async getMembershipByToken(feedToken: string): Promise<{ membership: UserMembership; calendar: CalendarProject } | null> {
+  async getMembershipByToken(rawFeedToken: string): Promise<{ membership: UserMembership; calendar: CalendarProject } | null> {
+    const feedToken = (rawFeedToken || '').replace(/\.ics$/i, '');
     try {
       const { data: member } = await supabase
         .from('calendar_members')
@@ -356,8 +357,9 @@ export const DataStore = {
         }
       }
 
-      // Fallback: if feedToken is a calendar_id or 'shared', resolve calendar directly
-      const calQuery = feedToken === 'shared'
+      // Fallback: if feedToken is a calendar_id, 'shared', or 'demo-token-default', resolve calendar directly
+      const isGenericToken = feedToken === 'shared' || feedToken === 'demo-token-default';
+      const calQuery = isGenericToken
         ? supabase.from('calendars').select('*').limit(1).maybeSingle()
         : supabase.from('calendars').select('*').eq('id', feedToken).maybeSingle();
       const { data: fallbackCal } = await calQuery;
