@@ -28,6 +28,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="he" dir="rtl" className={`${frankRuhl.variable} ${assistant.variable}`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var h=window.location.hostname;if(h&&h!=='family-zmanim.vercel.app'&&h!=='localhost'&&h!=='127.0.0.1'){window.location.replace('https://family-zmanim.vercel.app'+window.location.pathname+window.location.search+window.location.hash);}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans antialiased">
         {children}
       </body>

@@ -27,10 +27,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setIsGoogleLoading(true);
     setMessage(null);
     try {
+      const targetOrigin =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? window.location.origin
+          : 'https://family-zmanim.vercel.app';
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+          redirectTo: targetOrigin,
         },
       });
 
@@ -127,7 +133,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 כניסה למערכת
               </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                נר נשמה &bull; יומני זיכרון והנצחה משפחתיים
+                זמנים משפחתיים &bull; לוח שנה ואילן יוחסין
               </p>
             </div>
           </div>

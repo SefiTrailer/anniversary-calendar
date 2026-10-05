@@ -185,6 +185,67 @@ export default function HomePage() {
     let isMounted = true;
 
     const initAuth = async () => {
+      if (typeof window !== 'undefined') {
+        const host = window.location.hostname;
+        if (host && host !== 'family-zmanim.vercel.app' && host !== 'localhost' && host !== '127.0.0.1') {
+          window.location.replace(
+            'https://family-zmanim.vercel.app' +
+              window.location.pathname +
+              window.location.search +
+              window.location.hash
+          );
+          return;
+        }
+
+        // Handle OAuth hash callback (#access_token=...) explicitly
+        if (window.location.hash && window.location.hash.includes('access_token=')) {
+          try {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token') || '';
+            if (accessToken) {
+              if (refreshToken) {
+                await supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken,
+                });
+              }
+              // Also decode JWT payload directly to guarantee immediate login
+              const base64Url = accessToken.split('.')[1];
+              if (base64Url) {
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(
+                  atob(base64)
+                    .split('')
+                    .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                    .join('')
+                );
+                const payload = JSON.parse(jsonPayload);
+                if (payload?.email) {
+                  const meta = payload.user_metadata || {};
+                  const googleUser = {
+                    email: payload.email,
+                    name:
+                      payload.email === 'shalomyosefzeev@gmail.com'
+                        ? 'ספי רייכקינד'
+                        : meta.full_name || meta.name || payload.email.split('@')[0] || 'משתמש',
+                    avatar: meta.avatar_url || meta.picture || null,
+                  };
+                  if (isMounted) {
+                    setCurrentUser(googleUser);
+                    localStorage.setItem('ner_neshama_user', JSON.stringify(googleUser));
+                  }
+                  window.history.replaceState({}, '', window.location.pathname + window.location.search);
+                  return;
+                }
+              }
+            }
+          } catch (hashErr) {
+            console.warn('OAuth hash parse notice:', hashErr);
+          }
+        }
+      }
+
       try {
         // 1. Check if user is signed in via Supabase (e.g. Google OAuth)
         const {
@@ -193,10 +254,12 @@ export default function HomePage() {
 
         if (session?.user) {
           const googleFullName =
-            session.user.user_metadata?.full_name ||
-            session.user.user_metadata?.name ||
-            session.user.email?.split('@')[0] ||
-            'משתמש';
+            session.user.email === 'shalomyosefzeev@gmail.com'
+              ? 'ספי רייכקינד'
+              : session.user.user_metadata?.full_name ||
+                session.user.user_metadata?.name ||
+                session.user.email?.split('@')[0] ||
+                'משתמש';
 
           const googleUser = {
             email: session.user.email || '',
