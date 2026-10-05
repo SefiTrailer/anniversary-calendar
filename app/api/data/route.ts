@@ -87,12 +87,23 @@ export async function GET(request: NextRequest) {
   const userCalendars = await Promise.all(
     rawCalendars.map(async (cal) => {
       try {
-        const d = await DataStore.getDeceased(cal.id);
-        const b = await DataStore.getBranches(cal.id);
+        const [d, b, m] = await Promise.all([
+          DataStore.getDeceased(cal.id),
+          DataStore.getBranches(cal.id),
+          DataStore.getCalendarMembers(cal.id),
+        ]);
+        const pendingCount = m.filter((x) =>
+          (x.selected_branch_ids || []).includes('status:pending')
+        ).length;
+        const approvedCount = m.filter(
+          (x) => !(x.selected_branch_ids || []).includes('status:pending')
+        ).length;
         return {
           ...cal,
           deceased_count: d.length,
           branches_count: b.length,
+          members_count: approvedCount,
+          pending_requests_count: pendingCount,
         };
       } catch {
         return cal;

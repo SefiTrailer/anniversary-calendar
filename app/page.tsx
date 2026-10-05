@@ -106,6 +106,7 @@ export default function HomePage() {
   const [isBranchesModalOpen, setIsBranchesModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareModalInitialTab, setShareModalInitialTab] = useState<'share' | 'members'>('share');
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -1318,10 +1319,32 @@ export default function HomePage() {
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 space-y-3">
-                      <div className="flex items-center justify-between text-xs text-slate-600 font-semibold">
+                      <div className="flex items-center justify-between text-xs text-slate-600 font-semibold flex-wrap gap-1.5">
                         <span>{cal.deceased_count ?? 0} נפטרים רשומים</span>
                         <span>{cal.branches_count ?? 0} ענפי משפחה</span>
+                        <span className="inline-flex items-center gap-1 text-indigo-700 font-bold">
+                          <Users className="w-3.5 h-3.5" />
+                          <span>{cal.members_count ?? 1} חברים</span>
+                        </span>
                       </div>
+
+                      {(cal.pending_requests_count ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await handleSelectCalendar(cal);
+                            setShareModalInitialTab('members');
+                            setIsShareModalOpen(true);
+                          }}
+                          className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 font-extrabold text-xs flex items-center justify-between transition cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <BellRing className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                            <span>{cal.pending_requests_count} בקשות הצטרפות ממתינות לאישורך</span>
+                          </span>
+                          <span className="underline">צפה ואשר &larr;</span>
+                        </button>
+                      )}
 
                       <div className="flex items-center gap-2">
                         <button
@@ -1335,6 +1358,20 @@ export default function HomePage() {
                         <button
                           onClick={async () => {
                             await handleSelectCalendar(cal);
+                            setShareModalInitialTab('members');
+                            setIsShareModalOpen(true);
+                          }}
+                          className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer inline-flex items-center gap-1"
+                          title="צפה בחברים שהצטרפו ליומן ובבקשות הצטרפות"
+                        >
+                          <Users className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>{cal.members_count ?? 1}</span>
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            await handleSelectCalendar(cal);
+                            setShareModalInitialTab('share');
                             setIsShareModalOpen(true);
                           }}
                           className="px-3 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs transition cursor-pointer"
@@ -1414,6 +1451,29 @@ export default function HomePage() {
                   <span>צרף ענף מיומן אחר</span>
                 </button>
 
+                {/* Members & Join Requests Button (1-Click Access) */}
+                <button
+                  onClick={() => {
+                    setShareModalInitialTab('members');
+                    setIsShareModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                  title="צפה בכל החברים שהצטרפו ליומן שלך ובבקשות הצטרפות הממתינות לאישור"
+                >
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <span>חברים ובקשות ({calendarMembers.length})</span>
+                  {calendarMembers.some((m) => (m.selected_branch_ids || []).includes('status:pending')) && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
+                      {
+                        calendarMembers.filter((m) =>
+                          (m.selected_branch_ids || []).includes('status:pending')
+                        ).length
+                      }{' '}
+                      ממתינות
+                    </span>
+                  )}
+                </button>
+
                 {/* Smart GEM Import Button (Admin Only) */}
                 {isAdmin && (
                   <button
@@ -1428,7 +1488,10 @@ export default function HomePage() {
 
                 {/* Share Calendar Button */}
                 <button
-                  onClick={() => setIsShareModalOpen(true)}
+                  onClick={() => {
+                    setShareModalInitialTab('share');
+                    setIsShareModalOpen(true);
+                  }}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
                 >
                   <Share2 className="w-4 h-4" />
@@ -1716,6 +1779,19 @@ export default function HomePage() {
                     <span className="text-[11px] text-slate-300 font-bold">ענפי משפחה</span>
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShareModalInitialTab('members');
+                      setIsShareModalOpen(true);
+                    }}
+                    className="flex-1 sm:flex-initial bg-indigo-500/15 hover:bg-indigo-500/25 transition backdrop-blur-md rounded-2xl p-4 border border-indigo-400/30 text-center min-w-[105px] cursor-pointer relative"
+                    title="לחץ לצפייה בחברים שהצטרפו ליומן ובבקשות הצטרפות"
+                  >
+                    <span className="text-2xl font-black text-indigo-200 block">{calendarMembers.length}</span>
+                    <span className="text-[11px] text-indigo-100 font-bold">👥 חברים ובקשות</span>
+                  </button>
+
                   {missingDatesCount > 0 && (
                     <button
                       onClick={() => setViewMode('missing')}
@@ -1728,7 +1804,10 @@ export default function HomePage() {
                   )}
 
                   <button
-                    onClick={() => setIsShareModalOpen(true)}
+                    onClick={() => {
+                      setShareModalInitialTab('share');
+                      setIsShareModalOpen(true);
+                    }}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
                   >
                     <Share2 className="w-4 h-4" />
@@ -2105,6 +2184,7 @@ export default function HomePage() {
             feedToken={membership?.feed_token}
             isAdmin={isAdmin}
             members={calendarMembers}
+            initialTab={shareModalInitialTab}
             onManageMember={handleManageMember}
             onRemoveMember={handleRemoveMember}
           />

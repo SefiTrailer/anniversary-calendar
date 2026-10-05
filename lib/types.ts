@@ -7,6 +7,8 @@ export interface CalendarProject {
   created_at: string;
   deceased_count?: number;
   branches_count?: number;
+  members_count?: number;
+  pending_requests_count?: number;
 }
 
 export interface FamilyBranch {
