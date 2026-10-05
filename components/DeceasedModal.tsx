@@ -765,7 +765,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                   : 'הדמות תישמר באילן היוחסין להשלמת התאריך בעתיד.'}
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mr-3">
               <input
                 type="checkbox"
                 checked={hasConfirmedDate}
@@ -773,8 +773,14 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                 className="sr-only peer"
               />
               <div
-                className={`w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
-                  isLiving ? 'peer-checked:bg-emerald-600' : 'peer-checked:bg-amber-600'
+                className={`w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-xs ${
+                  isLiving
+                    ? simchaType === 'anniversary'
+                      ? 'peer-checked:bg-pink-600'
+                      : simchaType === 'simcha'
+                      ? 'peer-checked:bg-purple-600'
+                      : 'peer-checked:bg-emerald-600'
+                    : 'peer-checked:bg-amber-600'
                 }`}
               ></div>
             </label>
