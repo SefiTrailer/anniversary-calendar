@@ -10,10 +10,11 @@ import {
   formatHebrewDay,
   formatHebrewYear,
   isPersonLiving,
+  getSimchaType,
   cleanLivingMarkerFromText,
   getDeceasedFormattedParts,
 } from '@/lib/hebrew-calendar';
-import { X, Calendar, AlertTriangle, Check, Sunset, Info, Cake, Flame, GitBranch, HeartHandshake } from 'lucide-react';
+import { X, Calendar, AlertTriangle, Check, Sunset, Info, Cake, Flame, GitBranch, HeartHandshake, Heart, Sparkles } from 'lucide-react';
 
 interface DeceasedModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface DeceasedModalProps {
   initialData?: DeceasedPerson | null;
   calendarId: string;
   defaultIsLiving?: boolean;
+  defaultSimchaType?: 'birthday' | 'anniversary' | 'simcha';
   allPeople?: DeceasedPerson[];
 }
 
@@ -34,9 +36,11 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
   initialData,
   calendarId,
   defaultIsLiving = false,
+  defaultSimchaType = 'birthday',
   allPeople = [],
 }) => {
   const [isLiving, setIsLiving] = useState<boolean>(false);
+  const [simchaType, setSimchaType] = useState<'birthday' | 'anniversary' | 'simcha'>('birthday');
   const [transitionedFromLiving, setTransitionedFromLiving] = useState<boolean>(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -74,6 +78,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
     if (initialData) {
       const detectedLiving = isPersonLiving(initialData);
       setIsLiving(detectedLiving);
+      setSimchaType(detectedLiving ? getSimchaType(initialData) : 'birthday');
       setTransitionedFromLiving(false);
       setFirstName(initialData.first_name || '');
       setLastName(initialData.last_name || '');
@@ -99,6 +104,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       setDateMode(initialData.gregorian_original_date ? 'gregorian' : 'hebrew');
     } else {
       setIsLiving(Boolean(defaultIsLiving));
+      setSimchaType(defaultSimchaType || 'birthday');
       setTransitionedFromLiving(false);
       setFirstName('');
       setLastName('');
@@ -108,12 +114,12 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       setBranchId(branches[0]?.id || '');
       setGender('male');
       setTitle(defaultIsLiving ? '' : 'ר\'');
-      setRelationship('');
+      setRelationship(defaultSimchaType === 'anniversary' ? 'יום נישואין' : '');
       setGeneration(defaultIsLiving ? 1 : 2);
       setHasConfirmedDate(true);
       setHebrewDay(1);
       setHebrewMonth('Nisan');
-      setHebrewYear(defaultIsLiving ? 5755 : 5780);
+      setHebrewYear(defaultIsLiving ? 5765 : 5780);
       setGregorianDate('');
       setAfterSunset(false);
       setLeapPreference('Adar II');
@@ -121,15 +127,18 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
       setDateMode('hebrew');
     }
     setConflictData(null);
-  }, [initialData, branches, isOpen, defaultIsLiving]);
+  }, [initialData, branches, isOpen, defaultIsLiving, defaultSimchaType]);
 
   // Handle switching between Living and Deceased mode for new records
-  const handlePersonModeSwitch = (targetLiving: boolean) => {
+  const handlePersonModeSwitch = (targetLiving: boolean, targetSimchaType?: 'birthday' | 'anniversary' | 'simcha') => {
     if (initialData && isPersonLiving(initialData) && !targetLiving) {
       handleTransitionLivingToDeceased();
       return;
     }
     setIsLiving(targetLiving);
+    if (targetSimchaType) {
+      setSimchaType(targetSimchaType);
+    }
     if (!initialData) {
       if (targetLiving) {
         setTitle('');
@@ -258,17 +267,27 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
 
   const handleSubmit = async (force: boolean = false) => {
     if (!firstName.trim() || !lastName.trim() || !branchId) {
-      alert('נא למלא שם פרטי, שם משפחה ולבחור ענף משפחתי.');
+      alert('נא למלא שם, שם משפחה ולבחור ענף משפחתי.');
       return;
     }
 
     setIsSubmitting(true);
     try {
       const cleanRel = cleanLivingMarkerFromText(relationship);
+      const simchaTag =
+        isLiving && simchaType === 'anniversary'
+          ? '[יום נישואין]'
+          : isLiving && simchaType === 'simcha'
+          ? '[שמחה]'
+          : '';
+      const defaultLivingRel =
+        simchaType === 'anniversary'
+          ? 'יום נישואין'
+          : simchaType === 'simcha'
+          ? 'שמחה משפחתית'
+          : 'בן/בת משפחה';
       const finalRelationship = isLiving
-        ? cleanRel
-          ? `[בחיים] ${cleanRel}`
-          : '[בחיים] בן/בת משפחה'
+        ? `[בחיים]${simchaTag} ${cleanRel || defaultLivingRel}`
         : cleanRel || undefined;
 
       const payload: Partial<DeceasedPerson> = {
@@ -290,6 +309,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
         leap_year_preference: leapPreference,
         notes: cleanLivingMarkerFromText(notes) || undefined,
         is_living: isLiving,
+        simcha_type: isLiving ? simchaType : undefined,
         ...(lineagePath ? { lineage_path: lineagePath } : {}),
       };
 
@@ -328,19 +348,33 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
         >
           <div className="flex items-center gap-2.5">
             {isLiving ? (
-              <Cake className="w-5 h-5 text-emerald-300" />
+              simchaType === 'anniversary' ? (
+                <Heart className="w-5 h-5 text-pink-300" />
+              ) : simchaType === 'simcha' ? (
+                <Sparkles className="w-5 h-5 text-amber-300" />
+              ) : (
+                <Cake className="w-5 h-5 text-emerald-300" />
+              )
             ) : (
               <Calendar className="w-5 h-5 text-amber-400" />
             )}
             <h2 className="text-lg font-bold">
               {initialData
                 ? isLiving
-                  ? 'עריכת בן/בת משפחה בחיים (יום הולדת עברי)'
+                  ? simchaType === 'anniversary'
+                    ? 'עריכת יום נישואין עברי'
+                    : simchaType === 'simcha'
+                    ? 'עריכת שמחה משפחתית'
+                    : 'עריכת בן/בת משפחה בחיים (יום הולדת עברי)'
                   : transitionedFromLiving
                   ? 'עדכון פטירה ח״ו ושמירת מיקום בעץ המשפחה'
                   : 'עריכת פרטי נפטר/ת'
                 : isLiving
-                ? 'הוספת יום הולדת עברי (בן/בת משפחה בחיים)'
+                ? simchaType === 'anniversary'
+                  ? 'הוספת יום נישואין עברי ללוח השמחות'
+                  : simchaType === 'simcha'
+                  ? 'הוספת שמחה משפחתית ללוח השמחות'
+                  : 'הוספת יום הולדת עברי (בן/בת משפחה בחיים)'
                 : 'הוספת נפטר/ת ליומן המשפחתי'}
             </h2>
           </div>
@@ -354,33 +388,83 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-          {/* Mode Switcher: Deceased (Yahrzeit) vs Living (Hebrew Birthday & Tree Expansion) */}
+          {/* Mode Switcher: Deceased (Yahrzeit) vs Living (Hebrew Birthday / Anniversary / Simcha) */}
           <div className="bg-slate-100 p-1.5 rounded-xl border border-slate-200 grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => handlePersonModeSwitch(false)}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
                 !isLiving
                   ? 'bg-slate-900 text-amber-400 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <Flame className="w-4 h-4" />
-              <span>נפטר/ת • יום פטירה (יארצייט)</span>
+              <span>ממשק ימי זיכרון • יום פטירה (יארצייט)</span>
             </button>
             <button
               type="button"
-              onClick={() => handlePersonModeSwitch(true)}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition ${
+              onClick={() => handlePersonModeSwitch(true, simchaType)}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
                 isLiving
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <Cake className="w-4 h-4" />
-              <span>בן/בת משפחה בחיים • יום הולדת עברי</span>
+              <span>ממשק שמחות • ימי הולדת וימי נישואין</span>
             </button>
           </div>
+
+          {/* Sub-type selector when in Simchas / Living mode */}
+          {isLiving && (
+            <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/90 grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSimchaType('birthday');
+                  if (relationship === 'יום נישואין' || relationship === 'שמחה משפחתית') {
+                    setRelationship('');
+                  }
+                }}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  simchaType === 'birthday'
+                    ? 'bg-white text-emerald-900 shadow-xs ring-1 ring-emerald-300'
+                    : 'text-emerald-800 hover:bg-white/60'
+                }`}
+              >
+                <span>🎂 יום הולדת עברי</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimchaType('anniversary');
+                  if (!relationship) setRelationship('יום נישואין');
+                }}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  simchaType === 'anniversary'
+                    ? 'bg-white text-pink-900 shadow-xs ring-1 ring-pink-300'
+                    : 'text-emerald-800 hover:bg-white/60'
+                }`}
+              >
+                <span>💍 יום נישואין עברי</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimchaType('simcha');
+                  if (!relationship || relationship === 'יום נישואין') setRelationship('שמחה משפחתית');
+                }}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  simchaType === 'simcha'
+                    ? 'bg-white text-amber-900 shadow-xs ring-1 ring-amber-300'
+                    : 'text-emerald-800 hover:bg-white/60'
+                }`}
+              >
+                <span>🥂 שמחה משפחתית</span>
+              </button>
+            </div>
+          )}
 
           {/* Seamless Transition Banner when editing a living person */}
           {initialData && isPersonLiving(initialData) && isLiving && (
@@ -529,11 +613,22 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם פרטי <span className="text-red-500">*</span>
+                {isLiving && simchaType === 'anniversary'
+                  ? 'שמות בני הזוג'
+                  : isLiving && simchaType === 'simcha'
+                  ? 'שם בעל/ת השמחה או האירוע'
+                  : 'שם פרטי'}{' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="למשל: ישראל מאיר"
+                placeholder={
+                  isLiving && simchaType === 'anniversary'
+                    ? 'למשל: דוד ורחל'
+                    : isLiving && simchaType === 'simcha'
+                    ? 'למשל: אברהם (או: חנוכת הבית)'
+                    : 'למשל: ישראל מאיר'
+                }
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -588,14 +683,18 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 {isLiving
-                  ? 'קרבה משפחתית (למשל: בן, בת, אח, נכד, אבא)'
+                  ? simchaType === 'anniversary'
+                    ? 'תיאור הקרבה (למשל: הורים, סבא וסבתא, אח ואשתו)'
+                    : 'קרבה משפחתית (למשל: בן, בת, אח, נכד, אבא)'
                   : 'קרבה לבעל היומן (למשל: אם, סבא מצד אב)'}
               </label>
               <input
                 type="text"
                 placeholder={
                   isLiving
-                    ? 'למשל: בן, בת, אח, אחות, נכד, בת דודה'
+                    ? simchaType === 'anniversary'
+                      ? 'למשל: הורים, סבא וסבתא, אח וגיסה'
+                      : 'למשל: בן, בת, אח, אחות, נכד, בת דודה'
                     : 'למשל: אם, סבא מצד אב, אחות סבתא'
                 }
                 value={relationship}
@@ -642,19 +741,27 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
           <div
             className={`rounded-xl p-3.5 flex items-center justify-between border ${
               isLiving
-                ? 'bg-emerald-500/10 border-emerald-300/80'
+                ? simchaType === 'anniversary'
+                  ? 'bg-pink-500/10 border-pink-300/80'
+                  : 'bg-emerald-500/10 border-emerald-300/80'
                 : 'bg-amber-500/10 border-amber-300/80'
             }`}
           >
             <div>
               <div className="text-xs font-bold text-slate-900">
-                {isLiving ? 'האם ידוע תאריך הלידה העברי / הלועזי?' : 'האם יש תאריך פטירה מאומת?'}
+                {isLiving
+                  ? simchaType === 'anniversary'
+                    ? 'האם ידוע תאריך הנישואין העברי / הלועזי?'
+                    : simchaType === 'simcha'
+                    ? 'האם ידוע תאריך השמחה העברי / הלועזי?'
+                    : 'האם ידוע תאריך הלידה העברי / הלועזי?'
+                  : 'האם יש תאריך פטירה מאומת?'}
               </div>
               <div className="text-2xs text-slate-500">
                 {hasConfirmedDate
                   ? isLiving
-                    ? 'יום ההולדת העברי יחושב מדי שנה ויופיע בלוח ימי ההולדת ובעץ המשפחה.'
-                    : 'התאריך יוזן כעת ויופיע בלוח השנה ובסנכרון השנתי.'
+                    ? 'התאריך העברי יחושב מדי שנה ויופיע בממשק השמחות, בעץ המשפחה וביומן השמחות.'
+                    : 'התאריך יוזן כעת ויופיע בלוח השנה ובסנכרון השנתי (מצאת הכוכבים עד השקיעה).'
                   : 'הדמות תישמר באילן היוחסין להשלמת התאריך בעתיד.'}
               </div>
             </div>
@@ -679,7 +786,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700">
-                    {isLiving ? 'שיטת הזנת תאריך הלידה:' : 'שיטת הזנת תאריך הפטירה:'}
+                    {isLiving
+                      ? simchaType === 'anniversary'
+                        ? 'שיטת הזנת תאריך הנישואין:'
+                        : simchaType === 'simcha'
+                        ? 'שיטת הזנת תאריך השמחה:'
+                        : 'שיטת הזנת תאריך הלידה:'
+                      : 'שיטת הזנת תאריך הפטירה:'}
                   </span>
                   <div className="flex bg-slate-200 p-1 rounded-lg text-xs font-semibold">
                     <button
@@ -742,7 +855,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
 
                     <div>
                       <label className="block text-xs text-slate-600 mb-1">
-                        {isLiving ? 'שנת לידה עברית' : 'שנת פטירה עברית'}
+                        {isLiving
+                          ? simchaType === 'anniversary'
+                            ? 'שנת נישואין עברית'
+                            : simchaType === 'simcha'
+                            ? 'שנת האירוע העברית'
+                            : 'שנת לידה עברית'
+                          : 'שנת פטירה עברית'}
                       </label>
                       <input
                         type="number"
@@ -763,7 +882,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs text-slate-600 mb-1">
-                          {isLiving ? 'תאריך לידה לועזי' : 'תאריך פטירה לועזי מקורי'}
+                          {isLiving
+                            ? simchaType === 'anniversary'
+                              ? 'תאריך נישואין לועזי'
+                              : simchaType === 'simcha'
+                              ? 'תאריך האירוע הלועזי'
+                              : 'תאריך לידה לועזי'
+                            : 'תאריך פטירה לועזי מקורי'}
                         </label>
                         <input
                           type="date"
@@ -785,7 +910,9 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                             <Sunset className="w-4 h-4 text-amber-600" />
                             <span>
                               {isLiving
-                                ? 'הלידה התרחשה לאחר השקיעה / בערב'
+                                ? simchaType === 'anniversary'
+                                  ? 'החופה התרחשה לאחר השקיעה / בערב'
+                                  : 'האירוע/הלידה התרחשו לאחר השקיעה / בערב'
                                 : 'הפטירה התרחשה לאחר השקיעה / בצאת הכוכבים'}
                             </span>
                           </div>
@@ -795,7 +922,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
 
                     <p className="text-[11px] text-slate-500 flex items-center gap-1">
                       <Info className="w-3.5 h-3.5 text-slate-400" />
-                      לפי ההלכה, יום עברי מתחלף עם שקיעת החמה. אם {isLiving ? 'הלידה' : 'הפטירה'} הייתה בערב/לילה, התאריך העברי מחושב ליום הבא.
+                      לפי ההלכה, יום עברי מתחלף עם שקיעת החמה. אם {isLiving ? (simchaType === 'anniversary' ? 'החופה' : 'הלידה/השמחה') : 'הפטירה'} הייתה בערב/לילה, התאריך העברי מחושב ליום הבא.
                     </p>
                   </div>
                 )}
@@ -803,7 +930,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                 {/* Required Format Preview: Hebrew Primary, Gregorian in Parentheses */}
                 <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between">
                   <span className="text-xs font-medium text-blue-900">
-                    {isLiving ? 'תאריך יום ההולדת העברי:' : 'תבנית הצגת התאריך הרשמית:'}
+                    {isLiving
+                      ? simchaType === 'anniversary'
+                        ? 'תאריך יום הנישואין העברי:'
+                        : simchaType === 'simcha'
+                        ? 'תאריך השמחה העברי:'
+                        : 'תאריך יום ההולדת העברי:'
+                      : 'תבנית הצגת התאריך הרשמית:'}
                   </span>
                   <span className="text-sm font-bold text-blue-950 bg-white px-3 py-1 rounded-md border border-blue-200 shadow-sm">
                     {previewDate}
@@ -816,7 +949,7 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
                 <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {isLiving
-                      ? 'חגיגת יום ההולדת בשנה מעוברת (שבה יש שני חודשי אדר):'
+                      ? 'ציון השמחה / יום ההולדת בשנה מעוברת (שבה יש שני חודשי אדר):'
                       : 'מנהג בציון יום השנה בשנה מעוברת (שבה יש שני חודשי אדר):'}
                   </label>
                   <div className="flex gap-4 text-xs">
@@ -865,7 +998,9 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               rows={2}
               placeholder={
                 isLiving
-                  ? 'למשל: נולד בירושלים, פרטים על המשפחה...'
+                  ? simchaType === 'anniversary'
+                    ? 'למשל: התחתנו בירושלים, פרטים על המשפחה...'
+                    : 'למשל: נולד בירושלים, פרטים על המשפחה...'
                   : 'למשל: קבור בחלקת חב״ד בהר הזיתים, נהג לתת צדקה ביום זה, לומר קדיש...'
               }
               value={notes}
@@ -889,7 +1024,13 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
             disabled={isSubmitting}
             onClick={() => handleSubmit(false)}
             className={`inline-flex items-center gap-1.5 px-5 py-2 text-sm font-semibold text-white rounded-lg transition shadow disabled:opacity-50 ${
-              isLiving ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+              isLiving
+                ? simchaType === 'anniversary'
+                  ? 'bg-pink-600 hover:bg-pink-700'
+                  : simchaType === 'simcha'
+                  ? 'bg-purple-600 hover:bg-purple-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+                : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
             <Check className="w-4 h-4" />
@@ -897,7 +1038,11 @@ export const DeceasedModal: React.FC<DeceasedModalProps> = ({
               {initialData
                 ? 'שמור שינויים'
                 : isLiving
-                ? 'הוסף יום הולדת עברי לעץ'
+                ? simchaType === 'anniversary'
+                  ? 'הוסף יום נישואין ללוח השמחות'
+                  : simchaType === 'simcha'
+                  ? 'הוסף שמחה משפחתית ללוח'
+                  : 'הוסף יום הולדת עברי לעץ'
                 : 'הוסף נפטר ליומן'}
             </span>
           </button>

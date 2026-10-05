@@ -34,6 +34,7 @@ import {
   formatCalendarDisplayName,
   formatCalendarDescription,
   isPersonLiving,
+  getHalachicYahrzeitTimes,
 } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
@@ -64,6 +65,7 @@ import {
   Pencil,
   Link2,
   Cake,
+  Sunset,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -99,10 +101,13 @@ export default function HomePage() {
     selectedBranchIds: string[];
     membership?: UserMembership | null;
   } | null>(null);
+  const [sharedMaxGen, setSharedMaxGen] = useState<string>('all');
+  const [sharedSkippedGens, setSharedSkippedGens] = useState<number[]>([]);
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultModalIsLiving, setDefaultModalIsLiving] = useState(false);
+  const [defaultModalSimchaType, setDefaultModalSimchaType] = useState<'birthday' | 'anniversary' | 'simcha'>('birthday');
   const [isBranchesModalOpen, setIsBranchesModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -137,6 +142,16 @@ export default function HomePage() {
       const calId = sp.get('calendarId');
       const brParam = sp.get('branches') || '';
       const roleParam = sp.get('role') || '';
+      const urlMaxGen = sp.get('maxGen');
+      const urlSkipGens = sp.get('skipGens');
+      if (urlMaxGen) setSharedMaxGen(urlMaxGen);
+      if (urlSkipGens) {
+        const parsed = urlSkipGens
+          .split(',')
+          .map((x) => Number(x.trim()))
+          .filter((n) => !Number.isNaN(n));
+        setSharedSkippedGens(parsed);
+      }
 
       if (isShare && calId) {
         const q = new URLSearchParams({
@@ -749,27 +764,59 @@ export default function HomePage() {
     return token ? token.replace('calName:', '').trim() : '';
   }, [membership]);
 
+  const savedMaxGen = useMemo(() => {
+    const token = (membership?.selected_branch_ids || []).find((x) => x.startsWith('maxGen:'));
+    return token ? token.replace('maxGen:', '').trim() : 'all';
+  }, [membership]);
+
+  const savedSkipGens = useMemo(() => {
+    return (membership?.selected_branch_ids || [])
+      .filter((x) => x.startsWith('skipGen:'))
+      .map((x) => x.replace('skipGen:', '').trim())
+      .filter(Boolean);
+  }, [membership]);
+
   const webcalFeedUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
     const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    const params = new URLSearchParams({ v: '4' });
+    const params = new URLSearchParams({ v: '5', type: 'memorials' });
     if (savedCustomCalName) params.set('calName', savedCustomCalName);
+    if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
+    if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
     return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
-  }, [membership, savedCustomCalName]);
+  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens]);
+
+  const simchasWebcalUrl = useMemo(() => {
+    if (!membership?.feed_token) return '';
+    const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const protocol = isHttps ? 'webcal:' : 'http:';
+    const params = new URLSearchParams({ v: '5', type: 'simchas' });
+    if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
+    if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
+    return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
+  }, [membership, savedMaxGen, savedSkipGens]);
 
   const googleCalendarSubscribeUrl = useMemo(() => {
     if (!webcalFeedUrl) return '';
     return `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalFeedUrl)}`;
   }, [webcalFeedUrl]);
 
+  const googleSimchasSubscribeUrl = useMemo(() => {
+    if (!simchasWebcalUrl) return '';
+    return `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(simchasWebcalUrl)}`;
+  }, [simchasWebcalUrl]);
+
   const icsDownloadUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    const params = new URLSearchParams({ v: '4' });
+    const params = new URLSearchParams({ v: '5', type: 'memorials' });
     if (savedCustomCalName) params.set('calName', savedCustomCalName);
+    if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
+    if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
     return `/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
-  }, [membership, savedCustomCalName]);
+  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens]);
 
   const isAdmin = Boolean(
     currentUser &&
@@ -784,6 +831,17 @@ export default function HomePage() {
         sharedViewData?.membership?.role === 'editor' ||
         sharedViewData?.calendar?.created_by_user_id === currentUser.email)
   );
+
+  // Filtered deceased for shared view based on sharedMaxGen and sharedSkippedGens
+  const filteredSharedDeceased = useMemo(() => {
+    if (!sharedViewData) return [];
+    return sharedViewData.deceased.filter((d) => {
+      const relGen = getGenerationRelationInfo(d, userGeneration).relativeGeneration;
+      if (sharedMaxGen !== 'all' && relGen > Number(sharedMaxGen)) return false;
+      if (sharedSkippedGens.includes(relGen) || (relGen >= 8 && sharedSkippedGens.includes(8))) return false;
+      return true;
+    });
+  }, [sharedViewData, sharedMaxGen, sharedSkippedGens, userGeneration]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900 font-sans">
@@ -827,13 +885,13 @@ export default function HomePage() {
         {/* VIEW 0: SHARED VIEW MODE (WHEN VISITING VIA SELECTIVE SHARE LINK)        */}
         {/* ========================================================================= */}
         {sharedViewData && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {/* Shared View Notice Bar */}
             <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2 text-indigo-950 font-bold flex-wrap">
                 <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>
-                  תצוגת יומן משותפת: מוצגים ענפי המשפחה שנבחרו ({sharedViewData.branches.map((b) => b.name).join(' • ')})
+                  תצוגת לוח שנה משפחתי משותף: מוצגים ענפי המשפחה שנבחרו ({sharedViewData.branches.map((b) => b.name).join(' • ')})
                 </span>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
@@ -858,12 +916,13 @@ export default function HomePage() {
                   <button
                     onClick={() => {
                       setEditingDeceased(null);
+                      setDefaultModalIsLiving(false);
                       setIsAddModalOpen(true);
                     }}
                     className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition cursor-pointer inline-flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>הוסף נפטר</span>
+                    <span>הוסף רשומה</span>
                   </button>
                 )}
                 <button
@@ -891,10 +950,10 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
-                  <div className="flex-1 sm:flex-initial bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
-                    <span className="text-2xl font-black text-white block">{sharedViewData.deceased.length}</span>
-                    <span className="text-[11px] text-slate-300 font-bold">נפטרים בענף</span>
+                <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap">
+                  <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3.5 border border-white/10 text-center min-w-[95px]">
+                    <span className="text-2xl font-black text-white block">{filteredSharedDeceased.length}</span>
+                    <span className="text-[11px] text-slate-300 font-bold">רשומות בסינון</span>
                   </div>
 
                   <button
@@ -911,27 +970,136 @@ export default function HomePage() {
                       });
                       setIsJoinBranchModalOpen(true);
                     }}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 transition rounded-2xl px-4 py-4 text-center font-extrabold text-xs shadow-lg shadow-amber-500/20 cursor-pointer"
+                    className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 transition rounded-2xl px-4 py-3.5 text-center font-extrabold text-xs shadow-lg shadow-amber-500/20 cursor-pointer"
                     title="צרף ואחד ענף זה לתוך היומן המשפחתי האישי שלך כדי שלא תצטרך מספר יומנים נפרדים"
                   >
                     <Link2 className="w-4 h-4" />
                     <span>שלב ענף זה ביומן האישי שלי</span>
                   </button>
 
-                  <a
-                    href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
-                      `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
-                        typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app'
-                      }/api/calendar/${sharedViewData.feedToken}.ics?v=4&branches=${sharedViewData.selectedBranchIds.join(',')}`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-blue-600/30 cursor-pointer"
-                  >
-                    <CalendarIcon className="w-4 h-4" />
-                    <span>סנכרן ענף זה ל-Google Calendar</span>
-                  </a>
+                  {(() => {
+                    const proto = typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:';
+                    const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
+                    const baseParams = new URLSearchParams({
+                      v: '5',
+                      branches: sharedViewData.selectedBranchIds.join(','),
+                    });
+                    if (sharedMaxGen !== 'all') baseParams.set('maxGen', sharedMaxGen);
+                    if (sharedSkippedGens.length > 0) baseParams.set('skipGens', sharedSkippedGens.join(','));
+
+                    const memParams = new URLSearchParams(baseParams);
+                    memParams.set('type', 'memorials');
+                    const simParams = new URLSearchParams(baseParams);
+                    simParams.set('type', 'simchas');
+
+                    const memGoogleUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
+                      `${proto}//${host}/api/calendar/${sharedViewData.feedToken}.ics?${memParams.toString()}`
+                    )}`;
+                    const simGoogleUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
+                      `${proto}//${host}/api/calendar/${sharedViewData.feedToken}.ics?${simParams.toString()}`
+                    )}`;
+
+                    return (
+                      <>
+                        <a
+                          href={memGoogleUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition rounded-2xl px-4 py-3.5 text-center font-extrabold text-xs shadow-lg shadow-blue-600/30 cursor-pointer"
+                        >
+                          <CalendarIcon className="w-4 h-4" />
+                          <span>🕯️ סנכרן יומן ימי זיכרון</span>
+                        </a>
+                        <a
+                          href={simGoogleUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition rounded-2xl px-4 py-3.5 text-center font-extrabold text-xs shadow-lg shadow-emerald-600/30 cursor-pointer"
+                        >
+                          <Cake className="w-4 h-4" />
+                          <span>🎂💍 סנכרן יומן שמחות (בצבע נפרד)</span>
+                        </a>
+                      </>
+                    );
+                  })()}
                 </div>
+              </div>
+            </div>
+
+            {/* Interactive Generation Filter & Skipping Box for Shared Calendar Recipients */}
+            <div className="bg-white rounded-2xl border border-blue-200 p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <GitCommit className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs sm:text-sm font-extrabold text-slate-900">
+                    סינון דורות לסנכרון היומן שלך — בחר כמה דורות להכניס (או וותר על דורות רחוקים כמו 6–7):
+                  </span>
+                </div>
+                <select
+                  value={sharedMaxGen}
+                  onChange={(e) => setSharedMaxGen(e.target.value)}
+                  className="text-xs font-bold text-slate-800 bg-blue-50/70 border border-blue-300 rounded-xl px-3 py-1.5 cursor-pointer outline-none"
+                >
+                  <option value="all">הכל — כל הדורות בעץ</option>
+                  <option value="2">עד דור 2 בלבד (הורים, אחים וילדים)</option>
+                  <option value="3">עד דור 3 בלבד (כולל סבא וסבתא)</option>
+                  <option value="4">עד דור 4 בלבד (כולל סבא-רבא)</option>
+                  <option value="5">עד דור 5 בלבד (מוותר על דורות 6–7 ומעלה)</option>
+                  <option value="6">עד דור 6 בלבד (מוותר על דור 7 ומעלה)</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 ml-1">
+                  או לחץ כדי להסיר/להחזיר דור ספציפי:
+                </span>
+                {[
+                  { gen: 1, label: 'דור 1' },
+                  { gen: 2, label: 'דור 2 (הורים)' },
+                  { gen: 3, label: 'דור 3 (סבים)' },
+                  { gen: 4, label: 'דור 4 (סבא-רבא)' },
+                  { gen: 5, label: 'דור 5' },
+                  { gen: 6, label: 'דור 6' },
+                  { gen: 7, label: 'דור 7' },
+                  { gen: 8, label: 'דור 8+' },
+                ].map((chip) => {
+                  const isExceeded = sharedMaxGen !== 'all' && chip.gen > Number(sharedMaxGen);
+                  const isSkipped = sharedSkippedGens.includes(chip.gen) || isExceeded;
+                  return (
+                    <button
+                      key={chip.gen}
+                      type="button"
+                      disabled={isExceeded}
+                      onClick={() =>
+                        setSharedSkippedGens((prev) =>
+                          prev.includes(chip.gen)
+                            ? prev.filter((g) => g !== chip.gen)
+                            : [...prev, chip.gen]
+                        )
+                      }
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                        isSkipped
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                          : 'bg-blue-50 text-blue-900 border-blue-200 hover:bg-blue-100'
+                      }`}
+                    >
+                      {isSkipped ? '✕ ' : '✓ '}
+                      {chip.label}
+                    </button>
+                  );
+                })}
+                {(sharedMaxGen !== 'all' || sharedSkippedGens.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSharedMaxGen('all');
+                      setSharedSkippedGens([]);
+                    }}
+                    className="text-xs font-bold text-blue-700 hover:underline mr-2 cursor-pointer"
+                  >
+                    אפס סינון דורות
+                  </button>
+                )}
               </div>
             </div>
 
@@ -950,7 +1118,7 @@ export default function HomePage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                      זכרון להולכים
+                      🕯️ מצאת הכוכבים עד השקיעה
                     </span>
                     <button
                       type="button"
@@ -976,6 +1144,7 @@ export default function HomePage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
                       {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
                         const genInfo = getGenerationRelationInfo(person, userGeneration);
+                        const zm = upcoming.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
                         return (
                           <div
                             key={person.id}
@@ -1031,6 +1200,12 @@ export default function HomePage() {
                                       year: 'numeric',
                                     })})
                                   </span>
+                                  {zm && (
+                                    <span className="text-[11px] font-semibold text-amber-800 mt-0.5 flex items-center gap-1">
+                                      <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1064,9 +1239,9 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Deceased List (Read-Only for viewers, Editable for editors/admins) */}
+            {/* Deceased List (Filtered by chosen generations) */}
             <DeceasedList
-              deceased={sharedViewData.deceased}
+              deceased={filteredSharedDeceased}
               branches={sharedViewData.branches}
               isAdmin={canEdit}
               userGeneration={userGeneration}
@@ -1091,12 +1266,20 @@ export default function HomePage() {
               <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
               <div className="relative z-10 max-w-3xl mx-auto space-y-6">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 text-amber-300 text-xs font-bold">
+                  <span>🕯️ ממשק ימי זיכרון (יארצייט)</span>
+                  <span>•</span>
+                  <span>🎂💍 ממשק שמחות וימי הולדת</span>
+                  <span>•</span>
+                  <span>🌳 עץ משפחה</span>
+                </div>
+
                 <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight font-serif text-slate-50">
-                  נר נשמה &bull; לוח הנצחה וימי פטירה משפחתיים
+                  לוח שנה משפחתי &bull; ימי זיכרון, שמחות ועץ הדורות
                 </h2>
 
                 <p className="text-slate-300 text-sm sm:text-base leading-relaxed font-medium max-w-2xl mx-auto">
-                  מערכת אישית ומכובדת לניהול ימי פטירה (יארצייט) לפי לוח השנה העברי, התחשבות בשקיעת החמה, חלוקה לענפי משפחה וסנכרון ישיר ל-Google Calendar.
+                  מערכת משפחתית לניהול ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ימי הולדת עבריים וימי נישואין, סינון גמיש לפי דורות, וסנכרון ל-Google Calendar בשני יומנים נפרדים בצבעים שונים.
                 </p>
 
                 {/* Primary CTA Buttons */}
@@ -1133,7 +1316,7 @@ export default function HomePage() {
 
             {/* Dignified Jewish Quote */}
             <div className="text-center font-serif text-slate-700 italic text-sm sm:text-base">
-              ״זֵכֶר צַדִּיק לִבְרָכָה — מַעֲשִׂים טוֹבִים וְזִכָּרוֹן חַי לְעִלּוּי נִשְׁמַת יַקִּירֵינוּ״
+              ״לְדֹר וָדֹר נַגִּיד גָּדְלֶךָ — חיבור חי בין זיכרון הדורות הקודמים לשמחות הדורות הבאים״
             </div>
 
             {/* 4 Core Value Pillars */}
@@ -1142,9 +1325,19 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
                   <Flame className="w-6 h-6" />
                 </div>
-                <h3 className="font-serif font-black text-lg text-slate-900">חישוב עברי והלכתי מדויק</h3>
+                <h3 className="font-serif font-black text-lg text-slate-900">יארצייט מצאת הכוכבים עד השקיעה</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  התחשבות אוטומטית בשקיעת החמה, הבחנה בין אדר א' לאדר ב' בשנה מעוברת, וציון מניין השנים שחלפו (״שנת העשרים״).
+                  חישוב הלכתי מדויק: אירועי היארצייט ביומן מתחילים בדיוק בצאת הכוכבים בערב הקודם ומסתיימים בשקיעת החמה.
+                </p>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md transition space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                  <Cake className="w-6 h-6" />
+                </div>
+                <h3 className="font-serif font-black text-lg text-slate-900">ממשק ימי הולדת, נישואין ושמחות</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  תת-ממשק ייעודי לימי הולדת עבריים, ימי נישואין ושמחות משפחתיות המחובר ישירות לעץ המשפחה ולדורות הבאים.
                 </p>
               </div>
 
@@ -1152,9 +1345,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
                   <CalendarIcon className="w-6 h-6" />
                 </div>
-                <h3 className="font-serif font-black text-lg text-slate-900">סנכרון ל-Google Calendar</h3>
+                <h3 className="font-serif font-black text-lg text-slate-900">2 יומנים בצבעים שונים ב-Google</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  חיבור רציף של ימי הפטירה ישירות ליומן האישי במחשב ובסמארטפון עם תזכורות שקטות ומכובדות מראש.
+                  אפשרות להוסיף בנפרד את יומן ימי הזיכרון ואת יומן השמחות כך שיופיעו ביומן הגוגל שלכם בשני צבעים נפרדים.
                 </p>
               </div>
 
@@ -1162,19 +1355,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
                   <Users className="w-6 h-6" />
                 </div>
-                <h3 className="font-serif font-black text-lg text-slate-900">חלוקה לענפי משפחה ושיתוף חלקי</h3>
+                <h3 className="font-serif font-black text-lg text-slate-900">סינון דורות גמיש (ויתור על דור)</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  חלוקת הנפטרים לפי ענפי המשפחה, ואפשרות לשתף רק חצי מהיומן (ענף מסוים בלבד) עם בני הדודים.
-                </p>
-              </div>
-
-              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md transition space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <h3 className="font-serif font-black text-lg text-slate-900">פרטיות והפרדה מלאה</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  כל משתמש מנהל יומנים נפרדים. אפשרות למחוק יומן שלם בכל עת ושליטה מלאה על הרשאות הגישה.
+                  כל בן משפחה בוחר כמה דורות להכניס ליומן שלו ויכול לוותר בלחיצה על דורות רחוקים (כמו דור 6–7) או לבחור ענף ספציפי.
                 </p>
               </div>
             </div>
@@ -1768,10 +1951,10 @@ export default function HomePage() {
                     type="button"
                     onClick={() => setViewMode('birthdays')}
                     className="flex-1 sm:flex-initial bg-emerald-500/15 hover:bg-emerald-500/25 transition backdrop-blur-md rounded-2xl p-4 border border-emerald-400/30 text-center min-w-[105px] cursor-pointer"
-                    title="לחץ לצפייה והוספת ימי הולדת עבריים של בני המשפחה החיים"
+                    title="לחץ לצפייה והוספת ימי הולדת עבריים, ימי נישואין ושמחות משפחתיות"
                   >
                     <span className="text-2xl font-black text-emerald-300 block">{livingCount}</span>
-                    <span className="text-[11px] text-emerald-100 font-bold">🎂 ימי הולדת</span>
+                    <span className="text-[11px] text-emerald-100 font-bold">🎂💍 שמחות וימי הולדת</span>
                   </button>
 
                   <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
@@ -1832,7 +2015,7 @@ export default function HomePage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                      זכרון להולכים
+                      🕯️ מצאת הכוכבים עד השקיעה
                     </span>
                     <button
                       type="button"
@@ -1858,6 +2041,7 @@ export default function HomePage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
                       {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
                         const genInfo = getGenerationRelationInfo(person, userGeneration);
+                        const zm = upcoming.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
                         return (
                           <div
                             key={person.id}
@@ -1913,6 +2097,12 @@ export default function HomePage() {
                                       year: 'numeric',
                                     })})
                                   </span>
+                                  {zm && (
+                                    <span className="text-[11px] font-semibold text-amber-800 mt-0.5 flex items-center gap-1">
+                                      <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1946,9 +2136,9 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* View Mode Navigation Tabs & 1-Click Sync Bar (Positioned directly above the list it controls) */}
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
-              {/* Tabs */}
+            {/* View Mode Navigation Tabs & 2-Calendar Sync Bar (Positioned directly above the list it controls) */}
+            <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
+              {/* Sub-Interface Tabs */}
               <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl overflow-x-auto">
                 <button
                   onClick={() => setViewMode('list')}
@@ -1958,8 +2148,8 @@ export default function HomePage() {
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
-                  <List className="w-4 h-4" />
-                  <span>רשימת אזכרות</span>
+                  <Flame className="w-4 h-4 text-amber-600" />
+                  <span>🕯️ ממשק ימי זיכרון (יארצייט)</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200/80 text-slate-700">
                     {deceasedOnlyCount}
                   </span>
@@ -1974,7 +2164,7 @@ export default function HomePage() {
                   }`}
                 >
                   <Cake className="w-4 h-4 text-emerald-600" />
-                  <span>ימי הולדת עבריים (בחיים)</span>
+                  <span>🎂💍 ממשק שמחות (ימי הולדת ונישואין)</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-extrabold">
                     {livingCount}
                   </span>
@@ -1989,7 +2179,7 @@ export default function HomePage() {
                   }`}
                 >
                   <FolderTree className="w-4 h-4" />
-                  <span>עץ המשפחה והדורות</span>
+                  <span>🌳 עץ המשפחה והדורות</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
                     כל הדורות ({deceased.length})
                   </span>
@@ -2013,30 +2203,52 @@ export default function HomePage() {
                 </button>
               </div>
 
-              {/* 1-Click All Events to Google Calendar / ICS Download */}
-              <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+              {/* 1-Click Sync Bar: 2 Separate Calendars (Memorials vs Simchas in Separate Color) + Generation Filter */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 {googleCalendarSubscribeUrl && (
                   <a
                     href={googleCalendarSubscribeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-[1.01] active:scale-95 cursor-pointer"
-                    title="בלחיצה אחת: כל ימי הפטירה יתווספו יחד ליומן גוגל שלך, כולל תואר, קרבה ודור"
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-gradient-to-l from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
+                    title="יומן 1: סנכרן את יומן ימי הזיכרון (יארצייט מצאת הכוכבים עד השקיעה) ל-Google Calendar"
                   >
-                    <CalendarIcon className="w-4 h-4" />
-                    <span>סנכרן את כל האזכרות ל-Google Calendar</span>
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>🕯️ סנכרן יומן ימי זיכרון</span>
                   </a>
                 )}
+
+                {googleSimchasSubscribeUrl && (
+                  <a
+                    href={googleSimchasSubscribeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-gradient-to-l from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
+                    title="יומן 2: סנכרן את יומן ימי ההולדת, ימי הנישואין והשמחות כיומן שני (בצבע נפרד!) ל-Google Calendar"
+                  >
+                    <Cake className="w-3.5 h-3.5" />
+                    <span>🎂💍 סנכרן יומן שמחות (בצבע נפרד)</span>
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsSyncModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl font-bold text-xs transition cursor-pointer"
+                  title="בחר כמה דורות להכניס ליומן או וותר על דורות ספציפיים (כמו דור 6-7)"
+                >
+                  <GitCommit className="w-3.5 h-3.5 text-blue-600" />
+                  <span>סינון דורות וצבעים</span>
+                </button>
 
                 {icsDownloadUrl && (
                   <a
                     href={icsDownloadUrl}
                     download="yahrzeits.ics"
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
-                    title="הורד קובץ יומן מלא (ICS) עבור Apple Calendar, Outlook או סמארטפון"
+                    className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                    title="הורד קובץ יומן (ICS)"
                   >
-                    <Download className="w-4 h-4" />
-                    <span className="hidden sm:inline">הורד קובץ ICS</span>
+                    <Download className="w-3.5 h-3.5" />
                   </a>
                 )}
               </div>
@@ -2065,9 +2277,11 @@ export default function HomePage() {
                 branches={branches}
                 isAdmin={canEdit}
                 userGeneration={userGeneration}
-                onAddLiving={() => {
+                simchasWebcalUrl={simchasWebcalUrl}
+                onAddLiving={(simchaType) => {
                   setEditingDeceased(null);
                   setDefaultModalIsLiving(true);
+                  setDefaultModalSimchaType(simchaType || 'birthday');
                   setIsAddModalOpen(true);
                 }}
                 onEdit={(person) => {
@@ -2077,6 +2291,7 @@ export default function HomePage() {
                 }}
                 onDelete={handleDeleteDeceased}
                 onOpenLineage={setLineagePerson}
+                onOpenSyncModal={() => setIsSyncModalOpen(true)}
               />
             )}
 
@@ -2121,10 +2336,10 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200/80 py-8 text-center text-xs text-slate-500 mt-12 space-y-1">
         <p className="font-semibold text-slate-700 font-serif">
-          מערכת ״נר נשמה״ לניהול ימי פטירה משפחתיים &bull; מחושב לפי לוח השנה העברי ושקיעת החמה
+          לוח שנה משפחתי &bull; ממשק ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ממשק שמחות (ימי הולדת ונישואין) ועץ המשפחה
         </p>
         <p className="text-[11px] text-slate-400">
-          כל הזכויות שמורות &bull; תמיכה מלאה ב-Google Calendar, Apple Calendar ו-Outlook
+          כל הזכויות שמורות &bull; תמיכה מלאה בסנכרון 2 יומנים בצבעים שונים ל-Google Calendar, Apple Calendar ו-Outlook
         </p>
       </footer>
 
@@ -2148,6 +2363,7 @@ export default function HomePage() {
           initialData={editingDeceased}
           calendarId={(currentCalendar || sharedViewData?.calendar)!.id}
           defaultIsLiving={defaultModalIsLiving}
+          defaultSimchaType={defaultModalSimchaType}
           allPeople={currentCalendar ? deceased : (sharedViewData?.deceased || [])}
         />
       )}

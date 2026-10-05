@@ -103,12 +103,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <Flame className="w-6 h-6 animate-pulse" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-2xl font-black text-slate-900 tracking-tight font-serif">
-                    נר נשמה
+                    לוח שנה משפחתי
                   </h1>
                   <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 font-serif">
-                    ימי פטירה ויארצייט
+                    🕯️ יארצייט • 🎂💍 שמחות • 🌳 עץ משפחה
                   </span>
                 </div>
                 {(todayHebrewDate || todayGregorianDate) ? (
@@ -129,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500 hidden sm:block font-medium">
-                    לוח זיכרון משפחתי מסונכרן ליומן גוגל
+                    לוח שנה משפחתי — ימי זיכרון ושמחות מסונכרנים ליומן גוגל בשני צבעים
                   </p>
                 )}
               </div>

@@ -483,17 +483,34 @@ export const DataStore = {
 
   async addDeceased(deceased: DeceasedPerson) {
     const dbRecord: any = { ...deceased };
-    if (typeof dbRecord.is_living === 'boolean') {
-      const cleanRel = (dbRecord.relationship || '').replace(/\[בחיים\]/g, '').trim();
-      if (dbRecord.is_living) {
-        dbRecord.relationship = cleanRel ? `[בחיים] ${cleanRel}` : '[בחיים] בן/בת משפחה';
+    if (typeof dbRecord.is_living === 'boolean' || dbRecord.simcha_type) {
+      const cleanRel = (dbRecord.relationship || '')
+        .replace(/\[בחיים\]/g, '')
+        .replace(/\[יום נישואין\]/g, '')
+        .replace(/\[שמחה\]/g, '')
+        .replace(/\[יום הולדת\]/g, '')
+        .trim();
+      const simchaTag =
+        dbRecord.simcha_type === 'anniversary'
+          ? '[יום נישואין]'
+          : dbRecord.simcha_type === 'simcha'
+          ? '[שמחה]'
+          : '';
+      if (dbRecord.is_living || dbRecord.simcha_type) {
+        const prefix = `[בחיים]${simchaTag}`;
+        dbRecord.relationship = cleanRel ? `${prefix} ${cleanRel}` : `${prefix} בן/בת משפחה`;
       } else {
         dbRecord.relationship = cleanRel || undefined;
         if (dbRecord.notes) {
-          dbRecord.notes = dbRecord.notes.replace(/\[בחיים\]/g, '').trim();
+          dbRecord.notes = dbRecord.notes
+            .replace(/\[בחיים\]/g, '')
+            .replace(/\[יום נישואין\]/g, '')
+            .replace(/\[שמחה\]/g, '')
+            .trim();
         }
       }
       delete dbRecord.is_living;
+      delete dbRecord.simcha_type;
     }
     try {
       const { data } = await supabase.from('deceased').insert(dbRecord).select().single();
@@ -508,17 +525,34 @@ export const DataStore = {
 
   async updateDeceased(id: string, updates: Partial<DeceasedPerson>) {
     const dbUpdates: any = { ...updates };
-    if (typeof dbUpdates.is_living === 'boolean') {
-      const cleanRel = (dbUpdates.relationship || '').replace(/\[בחיים\]/g, '').trim();
+    if (typeof dbUpdates.is_living === 'boolean' || dbUpdates.simcha_type) {
+      const cleanRel = (dbUpdates.relationship || '')
+        .replace(/\[בחיים\]/g, '')
+        .replace(/\[יום נישואין\]/g, '')
+        .replace(/\[שמחה\]/g, '')
+        .replace(/\[יום הולדת\]/g, '')
+        .trim();
+      const simchaTag =
+        dbUpdates.simcha_type === 'anniversary'
+          ? '[יום נישואין]'
+          : dbUpdates.simcha_type === 'simcha'
+          ? '[שמחה]'
+          : '';
       if (dbUpdates.is_living) {
-        dbUpdates.relationship = cleanRel ? `[בחיים] ${cleanRel}` : '[בחיים] בן/בת משפחה';
+        const prefix = `[בחיים]${simchaTag}`;
+        dbUpdates.relationship = cleanRel ? `${prefix} ${cleanRel}` : `${prefix} בן/בת משפחה`;
       } else {
         dbUpdates.relationship = cleanRel || null;
         if (typeof dbUpdates.notes === 'string') {
-          dbUpdates.notes = dbUpdates.notes.replace(/\[בחיים\]/g, '').trim();
+          dbUpdates.notes = dbUpdates.notes
+            .replace(/\[בחיים\]/g, '')
+            .replace(/\[יום נישואין\]/g, '')
+            .replace(/\[שמחה\]/g, '')
+            .trim();
         }
       }
       delete dbUpdates.is_living;
+      delete dbUpdates.simcha_type;
     }
     try {
       const { data } = await supabase.from('deceased').update(dbUpdates).eq('id', id).select().single();

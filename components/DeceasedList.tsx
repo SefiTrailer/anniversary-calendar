@@ -14,6 +14,7 @@ import {
   matchesBranchHierarchyFilter,
   getPersonLineageBranchKeys,
   isPersonLiving,
+  getHalachicYahrzeitTimes,
 } from '@/lib/hebrew-calendar';
 import {
   Search,
@@ -847,6 +848,15 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                                 year: 'numeric',
                               })})
                             </p>
+                            {upcoming.gregorianDateStr && (() => {
+                              const zm = getHalachicYahrzeitTimes(upcoming.gregorianDateStr);
+                              return (
+                                <p className="text-[11px] font-semibold text-amber-900 mt-1 flex items-center gap-1 font-sans">
+                                  <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                </p>
+                              );
+                            })()}
                           </div>
                           {daysUntil >= 0 && (
                             <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 shrink-0">

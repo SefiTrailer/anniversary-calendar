@@ -55,6 +55,7 @@ export interface DeceasedPerson {
   lineage_path?: any[];
   geni_profile_id?: string | null;
   is_living?: boolean;
+  simcha_type?: 'birthday' | 'anniversary' | 'simcha';
 }
 
 export interface UserMembership {

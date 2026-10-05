@@ -4,16 +4,18 @@ import { DataStore } from '@/lib/data-store';
 import {
   calculateUpcomingYahrzeits,
   formatDisplayDateWithGregorian,
-  formatHebrewDateString,
   getDeceasedFullName,
   formatLineageChainText,
   getGenerationRelationInfo,
   formatLeiluyNishmat,
   matchesBranchHierarchyFilter,
   formatCalendarDisplayName,
+  formatSimchaCalendarDisplayName,
   formatCalendarDescription,
   isPersonLiving,
+  getSimchaType,
   cleanLivingMarkerFromText,
+  getHalachicYahrzeitTimes,
 } from '@/lib/hebrew-calendar';
 
 export async function GET(
@@ -33,12 +35,15 @@ export async function GET(
   const allBranchIds = allBranches.map(b => b.id);
   const branchMap = new Map(allBranches.map(b => [b.id, b.name]));
 
-  // Get deceased records matching user's selected branches, sub-branches (Gen 2/3/4), and maxGenerations
+  // Get records matching user's selected branches, sub-branches (Gen 2/3/4), maxGen, and skipGens
   const allDeceased = await DataStore.getDeceased(calendar.id);
   const queryBranches = request.nextUrl.searchParams.get('branches');
   const querySubBranch = request.nextUrl.searchParams.get('subBranch');
   const queryMaxGen = request.nextUrl.searchParams.get('maxGen');
+  const querySkipGens = request.nextUrl.searchParams.get('skipGens');
+  const queryUserGen = request.nextUrl.searchParams.get('userGen');
   const queryCalName = request.nextUrl.searchParams.get('calName');
+  const queryType = request.nextUrl.searchParams.get('type'); // 'memorials' | 'simchas' | 'all'
   const queryBirthdays = request.nextUrl.searchParams.get('birthdays');
 
   const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
@@ -46,13 +51,17 @@ export async function GET(
     return new NextResponse('הבקשה להצטרף לענף ממתינה לאישור בעל היומן', { status: 403 });
   }
 
-  const includeBirthdays =
-    queryBirthdays !== null
-      ? queryBirthdays !== 'false'
-      : !rawSelected.includes('birthdays:false');
+  // Determine feed type so Memorials (יארצייט) and Simchas (ימי הולדת וימי נישואין) can be subscribed as 2 separate colored calendars
+  const feedType: 'memorials' | 'simchas' | 'all' =
+    queryType === 'simchas' || queryBirthdays === 'only'
+      ? 'simchas'
+      : queryType === 'all' || queryBirthdays === 'true'
+      ? 'all'
+      : 'memorials';
 
-  // Extract any stored maxGen:N, calName:..., or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
+  // Extract any stored maxGen:N, skipGens:..., calName:..., or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
   const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
+  const storedSkipGensToken = rawSelected.find(s => s.startsWith('skipGens:'));
   const storedCalNameToken = rawSelected.find(s => s.startsWith('calName:'));
   const storedSubBranches = rawSelected.filter(s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:'));
   const storedUuidBranches = rawSelected.filter(id => allBranchIds.includes(id));
@@ -72,21 +81,48 @@ export async function GET(
 
   const effectiveMaxGenStr = queryMaxGen || (storedMaxGenToken ? storedMaxGenToken.replace('maxGen:', '') : null);
   const effectiveMaxGen = effectiveMaxGenStr && effectiveMaxGenStr !== 'all' ? Number(effectiveMaxGenStr) : null;
-  const userGen = membership.user_generation ?? 1;
+
+  const effectiveSkipGensStr = querySkipGens !== null
+    ? querySkipGens
+    : storedSkipGensToken
+    ? storedSkipGensToken.replace('skipGens:', '')
+    : '';
+  const skippedGenSet = new Set<number>(
+    effectiveSkipGensStr
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter(n => !isNaN(n))
+  );
+
+  const userGen =
+    queryUserGen !== null && !isNaN(Number(queryUserGen))
+      ? Number(queryUserGen)
+      : membership.user_generation ?? 1;
+
+  const passesEventFilter = (d: typeof allDeceased[number]) => {
+    if (!d.hebrew_day || !d.hebrew_month) return false;
+    const living = isPersonLiving(d);
+    if (feedType === 'memorials' && living) return false;
+    if (feedType === 'simchas' && !living) return false;
+
+    const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+    if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
+      if (relGen > effectiveMaxGen) return false;
+    }
+    if (skippedGenSet.has(relGen)) return false;
+
+    return true;
+  };
 
   const filteredDeceased = allDeceased.filter(d => {
-    if (!d.hebrew_day || !d.hebrew_month) return false;
-    if (!includeBirthdays && isPersonLiving(d)) return false;
+    if (!passesEventFilter(d)) return false;
     if (!targetBranchIds.includes(d.branch_id)) return false;
 
     if (activeSubBranches.length > 0) {
       const matchesAnySub = activeSubBranches.some(sb => matchesBranchHierarchyFilter(d, sb, allBranches));
       if (!matchesAnySub) return false;
-    }
-
-    if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
-      const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
-      if (relGen > effectiveMaxGen) return false;
     }
 
     return true;
@@ -103,9 +139,7 @@ export async function GET(
     }
     for (const ld of linkedDeceased) {
       if (
-        ld.hebrew_day &&
-        ld.hebrew_month &&
-        (includeBirthdays || !isPersonLiving(ld)) &&
+        passesEventFilter(ld) &&
         !filteredDeceased.some(existing => existing.id === ld.id)
       ) {
         filteredDeceased.push(ld);
@@ -114,7 +148,11 @@ export async function GET(
   }
 
   const customCalName = queryCalName || (storedCalNameToken ? storedCalNameToken.replace(/^calName:/, '') : '');
-  const displayCalName = formatCalendarDisplayName(calendar.name, customCalName).normalize('NFKC');
+  const displayCalName = (
+    feedType === 'simchas'
+      ? formatSimchaCalendarDisplayName(calendar.name, customCalName)
+      : formatCalendarDisplayName(calendar.name, customCalName)
+  ).normalize('NFKC');
   const displayCalDesc = formatCalendarDescription(calendar, membership.user_name).normalize('NFKC');
 
   // Initialize iCalendar (omit timezone so DTSTAMP is strictly UTC with 'Z' per RFC 5545, and set X-WR-TIMEZONE)
@@ -123,7 +161,11 @@ export async function GET(
     description: displayCalDesc,
     method: ICalCalendarMethod.PUBLISH,
     ttl: 3600, // Re-fetch every 1 hour
-    x: [['X-WR-TIMEZONE', 'Asia/Jerusalem']],
+    x: [
+      ['X-WR-TIMEZONE', 'Asia/Jerusalem'],
+      ['X-APPLE-CALENDAR-COLOR', feedType === 'simchas' ? '#10b981' : '#1e3a8a'],
+      ['COLOR', feedType === 'simchas' ? '#10b981' : '#1e3a8a'],
+    ],
   });
 
   // Dynamic sequence so Google Calendar automatically updates modified dates or names
@@ -136,6 +178,7 @@ export async function GET(
     gregorianDateStr: string;
     startDate: Date;
     endDate: Date;
+    allDay: boolean;
     summary: string;
     description: string;
     isUpcomingFromToday: boolean;
@@ -143,9 +186,10 @@ export async function GET(
 
   const pendingEvents: PendingIcsEvent[] = [];
 
-  // Calculate yahrzeits & Hebrew birthdays for the current Hebrew year + next 2 years
+  // Calculate yahrzeits & Hebrew simchas for the current Hebrew year + next 2 years
   for (const dec of filteredDeceased) {
     const living = isPersonLiving(dec);
+    const simchaType = getSimchaType(dec);
     const branchName = (branchMap.get(dec.branch_id) || 'כללי').normalize('NFKC');
     const upcomingList = calculateUpcomingYahrzeits(dec, 3, true);
 
@@ -174,7 +218,7 @@ export async function GET(
       dec.gregorian_original_date
     ).normalize('NFKC');
 
-    const genInfo = getGenerationRelationInfo(dec, membership.user_generation ?? 1);
+    const genInfo = getGenerationRelationInfo(dec, userGen);
     const relationLine = `קרבה: ${genInfo.badgeText} (${genInfo.relationDescription})`.normalize('NFKC');
 
     // Keep lineage chain concise inside the ICS file so large 25-gen trees stay fast and well under Google's size limits
@@ -195,36 +239,63 @@ export async function GET(
           .slice(0, 180)
       : '';
 
+    const simchaLabel =
+      simchaType === 'anniversary'
+        ? '💍 יום נישואין עברי'
+        : simchaType === 'simcha'
+        ? '🥂 שמחה משפחתית'
+        : '🎂 יום הולדת עברי';
+
     for (const upcoming of upcomingList) {
       const [y, m, d] = upcoming.gregorianDateStr.split('-').map(Number);
       if (!y || !m || !d) continue;
 
-      // Strictly UTC midnight so ical-generator formats the exact YYYYMMDD regardless of server timezone
-      const startDate = new Date(Date.UTC(y, m - 1, d));
-      const endDate = new Date(Date.UTC(y, m - 1, d + 1));
+      let startDate: Date;
+      let endDate: Date;
+      let allDay = true;
+      let zmanimLine = '';
+
+      if (!living) {
+        // Yahrzeit event starts at exact Tzeit HaKochavim (previous evening) and ends at exact Shkia (sunset of the day)
+        const zmanimInfo = getHalachicYahrzeitTimes(upcoming.gregorianDateStr);
+        startDate = zmanimInfo.startTzeit;
+        endDate = zmanimInfo.endShkia;
+        allDay = false;
+        zmanimLine = `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם ומסתיים בשקיעה (${zmanimInfo.endShkiaFormatted})`;
+      } else {
+        // Simcha / Birthday / Anniversary event
+        startDate = new Date(Date.UTC(y, m - 1, d));
+        endDate = new Date(Date.UTC(y, m - 1, d + 1));
+        allDay = true;
+      }
 
       const yearsPassedText =
         upcoming.yearsPassed > 0
           ? living
-            ? ` (גיל ${upcoming.yearsPassed})`
+            ? simchaType === 'anniversary'
+              ? ` (${upcoming.yearsPassed} שנות נישואין)`
+              : simchaType === 'simcha'
+              ? ` (שנת ה-${upcoming.yearsPassed})`
+              : ` (גיל ${upcoming.yearsPassed})`
             : ` (שנת ה-${upcoming.yearsPassed})`
           : '';
 
       pendingEvents.push({
-        id: `${living ? 'birthday' : 'yahrzeit'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
+        id: `${living ? simchaType : 'yahrzeit'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
         gregorianDateStr: upcoming.gregorianDateStr,
         startDate,
         endDate,
+        allDay,
         isUpcomingFromToday: upcoming.gregorianDateStr >= todayUtcStr,
         summary: living
-          ? `🎂 יום הולדת עברי: ${conciseName}${yearsPassedText}`
-          : `יארצייט: ${conciseName}${yearsPassedText}`,
+          ? `${simchaLabel}: ${conciseName}${yearsPassedText}`
+          : `🕯️ יארצייט: ${conciseName}${yearsPassedText}`,
         description: living
           ? [
-              `🎂 יום הולדת עברי של ${fullDisplayName}`,
-              leiluyText ? `ייחוס להורים: ${leiluyText}` : '',
+              `${simchaLabel} של ${fullDisplayName}`,
+              leiluyText ? `ייחוס משפחתי: ${leiluyText}` : '',
               relationLine,
-              `תאריך לידה עברי: ${originalDateFormatted}`,
+              `תאריך עברי: ${originalDateFormatted}`,
               `ענף משפחתי: ${branchName}`,
               lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
               cleanNotes ? `הערות: ${cleanNotes}` : '',
@@ -234,6 +305,7 @@ export async function GET(
               .join('\n')
           : [
               `יום השנה לפטירת ${fullDisplayName}`,
+              zmanimLine,
               leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
               relationLine,
               `תאריך עברי: ${originalDateFormatted}`,
@@ -249,7 +321,7 @@ export async function GET(
     }
   }
 
-  // Sort events so upcoming events starting from today (this month Tishrei & next month Cheshvan first!) appear at the very top of the ICS file
+  // Sort events so upcoming events starting from today appear at the very top of the ICS file
   pendingEvents.sort((a, b) => {
     if (a.isUpcomingFromToday !== b.isUpcomingFromToday) {
       return a.isUpcomingFromToday ? -1 : 1;
@@ -262,7 +334,7 @@ export async function GET(
       id: ev.id,
       start: ev.startDate,
       end: ev.endDate,
-      allDay: true,
+      allDay: ev.allDay,
       sequence: dynamicSequence,
       stamp: nowStamp,
       lastModified: nowStamp,

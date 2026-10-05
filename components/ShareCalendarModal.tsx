@@ -61,10 +61,12 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   );
   const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
   const [maxGen, setMaxGen] = useState<string>('all');
+  const [skippedGens, setSkippedGens] = useState<number[]>([]);
   const [customCalName, setCustomCalName] = useState<string>('');
   const [shareRole, setShareRole] = useState<'member' | 'editor'>('member');
   const [copiedWebLink, setCopiedWebLink] = useState(false);
   const [copiedSyncLink, setCopiedSyncLink] = useState(false);
+  const [copiedSimchaSyncLink, setCopiedSimchaSyncLink] = useState(false);
 
   // Add member form state
   const [newMemberEmail, setNewMemberEmail] = useState('');
@@ -110,21 +112,30 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     }
   };
 
+  const toggleSkipGen = (gen: number) => {
+    setSkippedGens((prev) =>
+      prev.includes(gen) ? prev.filter((g) => g !== gen) : [...prev, gen]
+    );
+  };
+
   const selectAll = () => {
     setSelectedBranchIds(branches.map((b) => b.id));
     setSelectedSubBranch('all');
+    setSkippedGens([]);
   };
-  const isAllSelected = selectedBranchIds.length === branches.length && selectedSubBranch === 'all';
+  const isAllSelected =
+    selectedBranchIds.length === branches.length &&
+    selectedSubBranch === 'all' &&
+    skippedGens.length === 0;
   const isPartialSelected = !isAllSelected;
 
-  // Compute deceased count matching selected branches, subBranch, and maxGen
+  // Compute deceased count matching selected branches, subBranch, maxGen, and skippedGens
   const selectedDeceasedCount = deceased.filter((d) => {
     if (!selectedBranchIds.includes(d.branch_id)) return false;
     if (selectedSubBranch !== 'all' && !matchesBranchHierarchyFilter(d, selectedSubBranch, branches)) return false;
-    if (maxGen !== 'all') {
-      const relGen = getGenerationRelationInfo(d, 1).relativeGeneration;
-      if (relGen > Number(maxGen)) return false;
-    }
+    const relGen = getGenerationRelationInfo(d, 1).relativeGeneration;
+    if (maxGen !== 'all' && relGen > Number(maxGen)) return false;
+    if (skippedGens.includes(relGen) || (relGen >= 8 && skippedGens.includes(8))) return false;
     return true;
   }).length;
 
@@ -138,29 +149,43 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const roleParam = shareRole === 'editor' ? '&role=editor' : '';
   const subBranchParam = selectedSubBranch !== 'all' ? `&subBranch=${encodeURIComponent(selectedSubBranch)}` : '';
   const maxGenParam = maxGen !== 'all' ? `&maxGen=${encodeURIComponent(maxGen)}` : '';
-  const webShareUrl = `${origin}/?share=true&calendarId=${calendar.id}&branches=${branchParam}${subBranchParam}${maxGenParam}${roleParam}`;
+  const skipGensParam = skippedGens.length > 0 ? `&skipGens=${encodeURIComponent(skippedGens.join(','))}` : '';
+  const webShareUrl = `${origin}/?share=true&calendarId=${calendar.id}&branches=${branchParam}${subBranchParam}${maxGenParam}${skipGensParam}${roleParam}`;
 
-  // Generate iCal / WebCal sync link (only include query params if a specific partial filter is chosen)
+  // Generate iCal / WebCal sync links for Memorials and Simchas
   const protocol = origin.startsWith('https') ? 'webcal:' : 'http:';
   const cleanHost = origin.replace(/^https?:\/\//, '');
   const effectiveToken = feedToken && feedToken !== 'shared' ? feedToken : calendar.id;
-  const syncQuery = new URLSearchParams({ v: '4' });
-  if (!isAllSelected && selectedBranchIds.length > 0) syncQuery.set('branches', branchParam);
-  if (selectedSubBranch !== 'all') syncQuery.set('subBranch', selectedSubBranch);
-  if (maxGen !== 'all') syncQuery.set('maxGen', maxGen);
-  if (effectiveCalName !== defaultDisplayName) syncQuery.set('calName', effectiveCalName);
-  const syncQueryStr = syncQuery.toString();
-  const webcalUrl = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
-  const httpsSyncUrl = `${origin}/api/calendar/${effectiveToken}.ics${syncQueryStr ? `?${syncQueryStr}` : ''}`;
-  const directGoogleAddUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
+
+  const buildSyncUrls = (feedType: 'memorials' | 'simchas') => {
+    const syncQuery = new URLSearchParams({ v: '5', type: feedType });
+    if (!isAllSelected && selectedBranchIds.length > 0) syncQuery.set('branches', branchParam);
+    if (selectedSubBranch !== 'all') syncQuery.set('subBranch', selectedSubBranch);
+    if (maxGen !== 'all') syncQuery.set('maxGen', maxGen);
+    if (skippedGens.length > 0) syncQuery.set('skipGens', skippedGens.join(','));
+    if (feedType === 'memorials' && effectiveCalName !== defaultDisplayName) {
+      syncQuery.set('calName', effectiveCalName);
+    }
+    const qs = syncQuery.toString();
+    const webcal = `${protocol}//${cleanHost}/api/calendar/${effectiveToken}.ics?${qs}`;
+    const https = `${origin}/api/calendar/${effectiveToken}.ics?${qs}`;
+    const googleSub = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    return { webcal, https, googleSub };
+  };
+
+  const memorialsSync = buildSyncUrls('memorials');
+  const simchasSync = buildSyncUrls('simchas');
 
   // Copy helper
-  const handleCopy = async (text: string, type: 'web' | 'sync') => {
+  const handleCopy = async (text: string, type: 'web' | 'sync' | 'simcha') => {
     try {
       await navigator.clipboard.writeText(text);
       if (type === 'web') {
         setCopiedWebLink(true);
         setTimeout(() => setCopiedWebLink(false), 2500);
+      } else if (type === 'simcha') {
+        setCopiedSimchaSyncLink(true);
+        setTimeout(() => setCopiedSimchaSyncLink(false), 2500);
       } else {
         setCopiedSyncLink(true);
         setTimeout(() => setCopiedSyncLink(false), 2500);
@@ -180,7 +205,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
       : selectedBranchNames.join(' + ');
     const genLabel = maxGen !== 'all' ? ` • עד דור ${maxGen}` : ' • כל הדורות';
     const roleLabel = shareRole === 'editor' ? 'כולל הרשאת עריכה והוספה' : 'צפייה וסנכרון ליומן';
-    const text = `שלום! מצורף קישור ליומן הזיכרון והיארצייט המשפחתי עבור *${effectiveCalName}* (ענף: ${branchLabel}${genLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מציג את תאריכי היארצייט העבריים, אזכרות קרובות, ואפשרות להוסיף ישירות ליומן Google שלך בלחיצה אחת (כל שינוי ביומן מתעדכן אוטומטית אצל כולם).`;
+    const text = `שלום! מצורף קישור ללוח השנה המשפחתי (ימי זיכרון, ימי הולדת ושמחות) עבור *${effectiveCalName}* (ענף: ${branchLabel}${genLabel} • ${roleLabel}):\n\n${webShareUrl}\n\nהקישור מאפשר לסנן לפי דורות ולהוסיף ליומן Google שני יומנים נפרדים (יומן ימי זיכרון + יומן שמחות בצבע שונה!).`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };
@@ -401,15 +426,64 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                       className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
                     >
                       <option value="all">הכל — כל הדורות בעץ (מקסימום)</option>
+                      <option value="2">עד דור 2 בלבד (הורים, אחים וילדים)</option>
                       <option value="3">עד דור 3 (סבא וסבתא)</option>
                       <option value="4">עד דור 4 (סבא-רבא וסבתא-רבתא)</option>
-                      <option value="5">עד דור 5 (בני נינים / 5 דורות)</option>
-                      <option value="6">עד דור 6 (6 דורות)</option>
-                      <option value="8">עד דור 8 (8 דורות)</option>
-                      <option value="10">עד דור 10 (10 דורות)</option>
-                      <option value="15">עד דור 15 (15 דורות)</option>
-                      <option value="20">עד דור 20 (20 דורות)</option>
+                      <option value="5">עד דור 5 (בני נינים / מוותר על 6-7+)</option>
+                      <option value="6">עד דור 6 (מוותר על דור 7+)</option>
+                      <option value="7">עד דור 7</option>
+                      <option value="8">עד דור 8</option>
+                      <option value="10">עד דור 10</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* Specific Generation Skipping Chips */}
+                <div className="bg-blue-50/60 border border-blue-200/80 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">
+                      ויתור / סינון דורות ספציפיים (לחץ כדי להסיר דור שלא רלוונטי עבורך):
+                    </span>
+                    {skippedGens.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSkippedGens([])}
+                        className="text-[10px] font-bold text-blue-700 hover:underline cursor-pointer"
+                      >
+                        החזר כל הדורות
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { gen: 1, label: 'דור 1' },
+                      { gen: 2, label: 'דור 2 (הורים)' },
+                      { gen: 3, label: 'דור 3 (סבים)' },
+                      { gen: 4, label: 'דור 4 (סבא-רבא)' },
+                      { gen: 5, label: 'דור 5' },
+                      { gen: 6, label: 'דור 6' },
+                      { gen: 7, label: 'דור 7' },
+                      { gen: 8, label: 'דור 8+' },
+                    ].map((chip) => {
+                      const isExceeded = maxGen !== 'all' && chip.gen > Number(maxGen);
+                      const isSkipped = skippedGens.includes(chip.gen) || isExceeded;
+                      return (
+                        <button
+                          key={chip.gen}
+                          type="button"
+                          disabled={isExceeded}
+                          onClick={() => toggleSkipGen(chip.gen)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                            isSkipped
+                              ? 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                              : 'bg-white text-blue-900 border-blue-300 shadow-2xs hover:bg-blue-50'
+                          }`}
+                        >
+                          {isSkipped ? '✕ ' : '✓ '}
+                          {chip.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -449,7 +523,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                               </span>
                             </div>
                             <span className="text-[10px] text-slate-500 font-medium">
-                              {count} נפטרים
+                              {count} רשומות בענף
                             </span>
                           </div>
                         </div>
@@ -459,7 +533,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 </div>
 
                 <p className="text-[11px] text-slate-500 font-medium">
-                  לפי הבחירה הנוכחית: <strong className="text-slate-800">{selectedDeceasedCount}</strong> נפטרים מהעץ ייכללו ביומן המשותף.
+                  לפי הבחירה הנוכחית: <strong className="text-slate-800">{selectedDeceasedCount}</strong> רשומות מהעץ ייכללו בלוח המשותף.
                 </p>
               </div>
 
@@ -482,7 +556,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                     <div>
                       <span className="block text-xs font-bold text-slate-900">צפייה בלבד</span>
                       <span className="block text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        צפייה ביומן ובאילן היוחסין + סנכרון ליומן Google אישי (ללא עריכה)
+                        צפייה בלוח ובאילן היוחסין + סנכרון ליומן Google אישי (ללא עריכה)
                       </span>
                     </div>
                   </button>
@@ -510,7 +584,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
               {/* Step 3: Sharing Channels */}
               <div className="space-y-4 pt-3 border-t border-slate-100">
                 <label className="block text-xs font-bold text-slate-800">
-                  3. שתף קישור או חבר ליומן Google:
+                  3. שתף קישור או חבר ליומן Google (בשני יומנים בצבעים שונים):
                 </label>
 
                 {/* WhatsApp Quick Share Button */}
@@ -527,7 +601,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 {/* Web Link Input & Copy */}
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-bold text-slate-600 block">
-                    קישור ישיר ({shareRole === 'editor' ? 'מעניק הרשאת עריכה למתחברים' : 'צפייה בלבד'}):
+                    קישור ישיר ללוח המשפחתי ({shareRole === 'editor' ? 'מעניק הרשאת עריכה למתחברים' : 'צפייה בלבד'}):
                   </span>
                   <div className="flex items-center gap-2">
                     <input
@@ -559,32 +633,58 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                   </div>
                 </div>
 
-                {/* Direct Google Calendar Sync for Selected Branches */}
-                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
-                      <CalendarIcon className="w-4 h-4 text-amber-700" />
-                      <span>סנכרון ישיר ליומן גוגל (מתעדכן אוטומטית בכל שינוי)</span>
+                {/* Direct Google Calendar Sync — 2 Separate Calendars for 2 Colors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Calendar 1: Memorials */}
+                  <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
+                    <div className="flex items-center gap-1.5 text-amber-950 font-extrabold text-xs">
+                      <CalendarIcon className="w-3.5 h-3.5 text-amber-700" />
+                      <span>🕯️ יומן 1: ימי זיכרון (צאת הכוכבים–שקיעה)</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <a
+                        href={memorialsSync.googleSub}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-xs transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>הוסף יומן ימי זיכרון ל-Google</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(memorialsSync.https, 'sync')}
+                        className="w-full px-3 py-1.5 bg-white hover:bg-amber-50 border border-amber-300 text-slate-700 rounded-xl font-bold text-[11px] transition cursor-pointer"
+                      >
+                        {copiedSyncLink ? 'קישור הועתק!' : 'העתק URL יומן זיכרון'}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={directGoogleAddUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-xs transition"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>הוסף בלחיצה אחת ל-Google Calendar</span>
-                    </a>
-
-                    <button
-                      onClick={() => handleCopy(httpsSyncUrl, 'sync')}
-                      className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl font-bold text-xs transition shrink-0 cursor-pointer"
-                    >
-                      {copiedSyncLink ? 'הועתק!' : 'העתק URL ליומן'}
-                    </button>
+                  {/* Calendar 2: Simchas */}
+                  <div className="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-2">
+                    <div className="flex items-center gap-1.5 text-emerald-950 font-extrabold text-xs">
+                      <CalendarIcon className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>🎂💍 יומן 2: ימי הולדת ושמחות (בצבע נפרד)</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <a
+                        href={simchasSync.googleSub}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>הוסף יומן שמחות ל-Google</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(simchasSync.https, 'simcha')}
+                        className="w-full px-3 py-1.5 bg-white hover:bg-emerald-50 border border-emerald-300 text-slate-700 rounded-xl font-bold text-[11px] transition cursor-pointer"
+                      >
+                        {copiedSimchaSyncLink ? 'קישור הועתק!' : 'העתק URL יומן שמחות'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

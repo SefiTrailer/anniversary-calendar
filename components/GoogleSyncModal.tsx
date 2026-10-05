@@ -7,6 +7,8 @@ import {
   matchesBranchHierarchyFilter,
   getGenerationRelationInfo,
   formatCalendarDisplayName,
+  formatSimchaCalendarDisplayName,
+  isPersonLiving,
 } from '@/lib/hebrew-calendar';
 import {
   X,
@@ -21,6 +23,9 @@ import {
   Layers,
   Edit3,
   RotateCcw,
+  Cake,
+  Flame,
+  Sunset,
 } from 'lucide-react';
 
 interface GoogleSyncModalProps {
@@ -34,6 +39,17 @@ interface GoogleSyncModalProps {
   onUpdateBranches: (selectedBranchIds: string[]) => Promise<void>;
 }
 
+const GENERATION_CHIPS = [
+  { gen: 1, label: 'דור 1 (הדור שלי / ילדים)' },
+  { gen: 2, label: 'דור 2 (הורים ודודים)' },
+  { gen: 3, label: 'דור 3 (סבים וסבתות)' },
+  { gen: 4, label: 'דור 4 (סבא-רבא)' },
+  { gen: 5, label: 'דור 5 (חימשים)' },
+  { gen: 6, label: 'דור 6 (6 דורות אחורה)' },
+  { gen: 7, label: 'דור 7 (7 דורות אחורה)' },
+  { gen: 8, label: 'דור 8+ (דורות קדומים)' },
+];
+
 export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   isOpen,
   onClose,
@@ -45,11 +61,14 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   onUpdateBranches,
 }) => {
   const defaultDisplayName = useMemo(() => formatCalendarDisplayName(calendarName), [calendarName]);
+  const simchaDisplayName = useMemo(() => formatSimchaCalendarDisplayName(calendarName), [calendarName]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedSubBranch, setSelectedSubBranch] = useState<string>('all');
   const [maxGen, setMaxGen] = useState<string>('all');
+  const [skippedGens, setSkippedGens] = useState<number[]>([]);
   const [customCalName, setCustomCalName] = useState<string>('');
-  const [copied, setCopied] = useState(false);
+  const [copiedMemorials, setCopiedMemorials] = useState(false);
+  const [copiedSimchas, setCopiedSimchas] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [origin, setOrigin] = useState('');
 
@@ -74,12 +93,19 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
       const savedMaxGen = raw.find((s) => s.startsWith('maxGen:'));
       setMaxGen(savedMaxGen ? savedMaxGen.replace('maxGen:', '') : 'all');
 
+      const savedSkipped = raw
+        .filter((s) => s.startsWith('skipGen:'))
+        .map((s) => Number(s.replace('skipGen:', '')))
+        .filter((n) => !Number.isNaN(n));
+      setSkippedGens(savedSkipped);
+
       const savedCalName = raw.find((s) => s.startsWith('calName:'));
       setCustomCalName(savedCalName ? savedCalName.replace(/^calName:/, '') : formatCalendarDisplayName(calendarName));
     } else {
       setSelectedBranches(allIds);
       setSelectedSubBranch('all');
       setMaxGen('all');
+      setSkippedGens([]);
       setCustomCalName(formatCalendarDisplayName(calendarName));
     }
   }, [membership, branches, isOpen, calendarName]);
@@ -88,11 +114,13 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     nextUuids: string[],
     nextSub: string,
     nextMaxGen: string,
+    nextSkippedGens: number[] = skippedGens,
     nextCalName: string = customCalName
   ) => {
     const combined: string[] = [...nextUuids];
     if (nextSub && nextSub !== 'all') combined.push(nextSub);
     if (nextMaxGen && nextMaxGen !== 'all') combined.push(`maxGen:${nextMaxGen}`);
+    nextSkippedGens.forEach((g) => combined.push(`skipGen:${g}`));
     const cleanName = nextCalName.trim();
     if (cleanName && cleanName !== defaultDisplayName) {
       combined.push(`calName:${cleanName}`);
@@ -106,34 +134,56 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     }
   };
 
-  // Compute how many deceased with valid dates match the current sync settings
-  const matchingDeceasedCount = useMemo(() => {
+  // Compute how many memorials vs simchas match the current sync settings
+  const { matchingMemorialsCount, matchingSimchasCount } = useMemo(() => {
     const userGen = membership?.user_generation ?? 1;
-    return deceased.filter((d) => {
-      if (!d.hebrew_day || !d.hebrew_month) return false;
-      if (selectedBranches.length > 0 && !selectedBranches.includes(d.branch_id)) return false;
+    let memorials = 0;
+    let simchas = 0;
+
+    deceased.forEach((d) => {
+      if (!d.hebrew_day || !d.hebrew_month) return;
+      if (selectedBranches.length > 0 && !selectedBranches.includes(d.branch_id)) return;
       if (selectedSubBranch !== 'all' && !matchesBranchHierarchyFilter(d, selectedSubBranch, branches)) {
-        return false;
+        return;
       }
-      if (maxGen !== 'all') {
-        const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
-        if (relGen > Number(maxGen)) return false;
+      const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+      const normalizedGen = relGen >= 8 ? 8 : relGen <= 1 ? 1 : relGen;
+      if (maxGen !== 'all' && relGen > Number(maxGen)) return;
+      if (skippedGens.includes(relGen) || (relGen >= 8 && skippedGens.includes(8))) return;
+      if (skippedGens.includes(normalizedGen)) return;
+
+      if (isPersonLiving(d)) {
+        simchas++;
+      } else {
+        memorials++;
       }
-      return true;
-    }).length;
-  }, [deceased, selectedBranches, selectedSubBranch, maxGen, branches, membership]);
+    });
+
+    return { matchingMemorialsCount: memorials, matchingSimchasCount: simchas };
+  }, [deceased, selectedBranches, selectedSubBranch, maxGen, skippedGens, branches, membership]);
 
   if (!isOpen) return null;
 
   const token = membership?.feed_token || 'demo-token-default';
   const effectiveCalName = customCalName.trim() || defaultDisplayName;
-  const queryParams = new URLSearchParams({ v: '4' });
-  if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
-  if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
-  if (effectiveCalName !== defaultDisplayName) queryParams.set('calName', effectiveCalName);
-  const queryString = queryParams.toString();
-  const httpsUrl = `${origin}/api/calendar/${token}.ics?${queryString}`;
-  const webcalUrl = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics?${queryString}`;
+
+  const buildFeedUrls = (feedType: 'memorials' | 'simchas') => {
+    const queryParams = new URLSearchParams({ v: '5', type: feedType });
+    if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
+    if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
+    if (skippedGens.length > 0) queryParams.set('skipGens', skippedGens.join(','));
+    if (feedType === 'memorials' && effectiveCalName !== defaultDisplayName) {
+      queryParams.set('calName', effectiveCalName);
+    }
+    const qs = queryParams.toString();
+    const https = `${origin}/api/calendar/${token}.ics?${qs}`;
+    const webcal = `${origin.replace(/^https?:/, 'webcal:')}/api/calendar/${token}.ics?${qs}`;
+    const googleSub = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    return { https, webcal, googleSub };
+  };
+
+  const memorialsUrls = buildFeedUrls('memorials');
+  const simchasUrls = buildFeedUrls('simchas');
 
   const toggleBranch = async (branchId: string) => {
     const updated = selectedBranches.includes(branchId)
@@ -141,56 +191,66 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
       : [...selectedBranches, branchId];
 
     setSelectedBranches(updated);
-    await persistSelection(updated, selectedSubBranch, maxGen, customCalName);
+    await persistSelection(updated, selectedSubBranch, maxGen, skippedGens, customCalName);
   };
 
   const selectAll = async () => {
     const all = branches.map((b) => b.id);
     setSelectedBranches(all);
     setSelectedSubBranch('all');
-    await persistSelection(all, 'all', maxGen, customCalName);
+    await persistSelection(all, 'all', maxGen, skippedGens, customCalName);
   };
 
   const handleSubBranchChange = async (nextSub: string) => {
     setSelectedSubBranch(nextSub);
     const all = branches.map((b) => b.id);
     setSelectedBranches(all);
-    await persistSelection(all, nextSub, maxGen, customCalName);
+    await persistSelection(all, nextSub, maxGen, skippedGens, customCalName);
   };
 
   const handleMaxGenChange = async (nextMaxGen: string) => {
     setMaxGen(nextMaxGen);
-    await persistSelection(selectedBranches, selectedSubBranch, nextMaxGen, customCalName);
+    await persistSelection(selectedBranches, selectedSubBranch, nextMaxGen, skippedGens, customCalName);
+  };
+
+  const toggleSkipGeneration = async (genNumber: number) => {
+    const nextSkipped = skippedGens.includes(genNumber)
+      ? skippedGens.filter((g) => g !== genNumber)
+      : [...skippedGens, genNumber];
+    setSkippedGens(nextSkipped);
+    await persistSelection(selectedBranches, selectedSubBranch, maxGen, nextSkipped, customCalName);
   };
 
   const handleSaveCalName = async (nextName: string) => {
     setCustomCalName(nextName);
-    await persistSelection(selectedBranches, selectedSubBranch, maxGen, nextName);
+    await persistSelection(selectedBranches, selectedSubBranch, maxGen, skippedGens, nextName);
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(httpsUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  const copyMemorialsUrl = () => {
+    navigator.clipboard.writeText(memorialsUrls.https);
+    setCopiedMemorials(true);
+    setTimeout(() => setCopiedMemorials(false), 2500);
   };
 
-  const googleCalendarSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
-    webcalUrl
-  )}`;
+  const copySimchasUrl = () => {
+    navigator.clipboard.writeText(simchasUrls.https);
+    setCopiedSimchas(true);
+    setTimeout(() => setCopiedSimchas(false), 2500);
+  };
 
   const ownerDisplay = calendarOwnerName || membership?.user_name || '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl my-8 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl my-8 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-l from-blue-700 to-indigo-800 text-white px-6 py-4 flex items-center justify-between">
+        <div className="bg-gradient-to-l from-blue-800 via-indigo-800 to-slate-900 text-white px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Calendar className="w-6 h-6 text-blue-200" />
+            <Calendar className="w-6 h-6 text-amber-300" />
             <div>
-              <h2 className="text-lg font-bold">סנכרון ימי פטירה ליומן גוגל (Google Calendar)</h2>
+              <h2 className="text-lg font-bold">סנכרון לוח שנה משפחתי ל-Google Calendar (שני יומנים בצבעים שונים)</h2>
               <p className="text-xs text-blue-100">
-                בחר את שם היומן, הענף וכמה דורות מהעץ ברצונך להכניס ליומן שלך
+                בחר אילו דורות וענפים לסנכרן, והוסף בנפרד את יומן ימי הזיכרון ואת יומן השמחות כדי שיופיעו ב-2 צבעים!
               </p>
             </div>
           </div>
@@ -203,83 +263,97 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-          {/* 0. Calendar Display Name & Owner Description */}
-          <div className="bg-amber-50/60 border border-amber-200/90 rounded-xl p-4 space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-amber-700 shrink-0" />
-                <h3 className="text-sm font-extrabold text-slate-900">
-                  שם היומן כפי שיופיע ב-Google Calendar:
-                </h3>
-              </div>
-              {customCalName !== defaultDisplayName && (
-                <button
-                  type="button"
-                  onClick={() => handleSaveCalName(defaultDisplayName)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>איפוס לברירת מחדל</span>
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={customCalName}
-                onChange={(e) => setCustomCalName(e.target.value)}
-                onBlur={() => persistSelection(selectedBranches, selectedSubBranch, maxGen, customCalName)}
-                placeholder={defaultDisplayName}
-                className="flex-1 text-sm font-bold text-slate-900 bg-white border border-amber-300 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-            <p className="text-[11px] text-slate-600">
-              <strong>תיאור היומן שיצורף אוטומטית:</strong>{' '}
-              לוח ימי פטירה (יארצייט) מתעדכן אוטומטית{ownerDisplay ? ` | בעל היומן: ${ownerDisplay}` : ''}
-            </p>
-          </div>
-
-          {/* 1. Generation Depth Selection */}
-          <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-4 space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
+        <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+          {/* 1. Generation Depth Selection & Skipping Specific Generations */}
+          <div className="bg-blue-50/70 border border-blue-200/90 rounded-xl p-4 space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <GitCommit className="w-4 h-4 text-blue-700 shrink-0" />
                 <h3 className="text-sm font-extrabold text-slate-900">
-                  1. כמה דורות מהעץ ברצונך להכניס ליומן שלך?
+                  1. סינון דורות ליומן — כמה דורות להכניס, ועל אילו דורות לוותר?
                 </h3>
               </div>
-              <span className="text-xs font-extrabold text-blue-800 bg-blue-100 px-2.5 py-0.5 rounded-full">
-                {matchingDeceasedCount} ימי זיכרון פעילים
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold text-amber-900 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                  🕯️ {matchingMemorialsCount} ימי זיכרון
+                </span>
+                <span className="text-xs font-extrabold text-emerald-900 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                  🎂💍 {matchingSimchasCount} שמחות
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-slate-600">
-              העץ המלא מכיל את מקסימום הדורות. תוכל לבחור לסנכרן את כל הדורות, או להגביל עד דור מסוים בלבד:
-            </p>
-            <select
-              value={maxGen}
-              onChange={(e) => handleMaxGenChange(e.target.value)}
-              className="w-full text-sm font-bold text-slate-800 bg-white border border-blue-300 rounded-xl px-3.5 py-2.5 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">הכל — כל הדורות בעץ (מקסימום דורות)</option>
-              <option value="3">עד דור 3 בלבד (הורים, סבא וסבתא)</option>
-              <option value="4">עד דור 4 בלבד (כולל סבא-רבא וסבתא-רבתא)</option>
-              <option value="5">עד דור 5 (בני נינים / 5 דורות)</option>
-              <option value="6">עד דור 6 (6 דורות)</option>
-              <option value="8">עד דור 8 (8 דורות)</option>
-              <option value="10">עד דור 10 (10 דורות)</option>
-              <option value="15">עד דור 15 (15 דורות)</option>
-              <option value="20">עד דור 20 (20 דורות)</option>
-            </select>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                הגבלת עומק דורות מקסימלי (למשל: בלי 6–7 דורות אחורה):
+              </label>
+              <select
+                value={maxGen}
+                onChange={(e) => handleMaxGenChange(e.target.value)}
+                className="w-full text-sm font-bold text-slate-800 bg-white border border-blue-300 rounded-xl px-3.5 py-2.5 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">הכל — כל הדורות בעץ (ללא הגבלת תקרה)</option>
+                <option value="2">עד דור 2 בלבד (הורים, אחים וילדים)</option>
+                <option value="3">עד דור 3 בלבד (כולל סבא וסבתא)</option>
+                <option value="4">עד דור 4 בלבד (כולל סבא-רבא וסבתא-רבתא)</option>
+                <option value="5">עד דור 5 בלבד (מוותר על דורות 6–7 ומעלה)</option>
+                <option value="6">עד דור 6 בלבד (מוותר על דור 7 ומעלה)</option>
+                <option value="7">עד דור 7 בלבד</option>
+              </select>
+            </div>
+
+            {/* Specific Generation Toggle Chips */}
+            <div className="pt-2 border-t border-blue-200/70 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800">
+                  רוצה &quot;לוותר&quot; על דור ספציפי? לחץ על דור כדי להסיר או להחזיר אותו ליומן:
+                </span>
+                {skippedGens.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSkippedGens([]);
+                      persistSelection(selectedBranches, selectedSubBranch, maxGen, [], customCalName);
+                    }}
+                    className="text-[11px] font-bold text-blue-700 hover:underline cursor-pointer"
+                  >
+                    החזר את כל הדורות
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {GENERATION_CHIPS.map((chip) => {
+                  const isExceededByMax = maxGen !== 'all' && chip.gen > Number(maxGen);
+                  const isSkipped = skippedGens.includes(chip.gen) || isExceededByMax;
+                  return (
+                    <button
+                      key={chip.gen}
+                      type="button"
+                      disabled={isExceededByMax}
+                      onClick={() => toggleSkipGeneration(chip.gen)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                        isSkipped
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                          : 'bg-white text-blue-900 border-blue-300 shadow-2xs hover:bg-blue-50'
+                      }`}
+                    >
+                      <span>{isSkipped ? '✕' : '✓'}</span>
+                      <span>{chip.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          {/* 2. Hierarchical Branch / Sub-Branch Selection (Up to Generation 4) */}
+          {/* 2. Hierarchical Branch / Sub-Branch Selection */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <GitBranch className="w-4 h-4 text-indigo-600 shrink-0" />
                 <h3 className="text-sm font-extrabold text-slate-800">
-                  2. שיוך לענף מרכזי או תת-ענף (עד דור סבא-רבא וסבתא-רבתא):
+                  2. סינון לפי ענף משפחתי או תת-ענף:
                 </h3>
               </div>
               <button
@@ -329,7 +403,6 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
               )}
             </select>
 
-            {/* Legacy Branch Checkboxes */}
             <div className="pt-2 border-t border-slate-200/80">
               <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1">
                 <Layers className="w-3.5 h-3.5 text-slate-400" />
@@ -368,79 +441,194 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
             {isSaving && (
               <span className="text-[11px] text-blue-600 font-medium block mt-1 animate-pulse">
-                שומר את הגדרות הסנכרון שלך... הפיד מתעדכן אוטומטית!
+                שומר את הגדרות הסנכרון שלך... הפידים מתעדכנים אוטומטית!
               </span>
             )}
           </div>
 
-          {/* 3. Feed URL & Direct Google Button */}
+          {/* 3. TWO SEPARATE CALENDARS FOR DIFFERENT COLORS IN GOOGLE CALENDAR */}
           <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-800">
-              3. התחברות ליומן בלחיצה אחת:
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <a
-                href={googleCalendarSubscribeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md transition transform active:scale-95"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>הוסף בלחיצה ל-Google Calendar</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={copyToClipboard}
-                className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-semibold text-sm shadow-sm transition cursor-pointer"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="text-emerald-700">הקישור הועתק בהצלחה!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 text-slate-500" />
-                    <span>העתק קישור מנוי (URL)</span>
-                  </>
-                )}
-              </button>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-slate-900">
+                3. הוספה ל-Google Calendar בשני יומנים נפרדים (כדי שיופיעו בצבעים שונים!):
+              </h3>
             </div>
 
-            <div className="p-2.5 bg-slate-100 rounded-lg border border-slate-200 text-xs font-mono text-slate-600 truncate text-left">
-              {httpsUrl}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Calendar 1: Memorials (Yahrzeits) */}
+              <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/40 p-4 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-950 border border-amber-300">
+                      <Flame className="w-3.5 h-3.5 text-amber-600" />
+                      <span>יומן 1 • ימי זיכרון (יארצייט)</span>
+                    </span>
+                    <span className="text-xs font-bold text-amber-900">{matchingMemorialsCount} נפטרים</span>
+                  </div>
+
+                  {/* Custom Calendar Name for Memorials */}
+                  <div className="space-y-1 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                      <span className="flex items-center gap-1">
+                        <Edit3 className="w-3 h-3 text-amber-700" />
+                        <span>שם יומן ימי הזיכרון:</span>
+                      </span>
+                      {customCalName !== defaultDisplayName && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveCalName(defaultDisplayName)}
+                          className="text-amber-800 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>איפוס</span>
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={customCalName}
+                      onChange={(e) => setCustomCalName(e.target.value)}
+                      onBlur={() =>
+                        persistSelection(selectedBranches, selectedSubBranch, maxGen, skippedGens, customCalName)
+                      }
+                      placeholder={defaultDisplayName}
+                      className="w-full text-xs font-bold text-slate-900 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-200 text-[11px] text-amber-950 flex items-start gap-1.5">
+                    <Sunset className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>זמנים הלכתיים מדויקים:</strong> כל אירוע יארצייט מתחיל בדיוק ב<strong>צאת הכוכבים</strong> בערב שלפני ומסתיים ב<strong>שקיעת החמה</strong> ביום היארצייט עצמו.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <a
+                    href={memorialsUrls.googleSub}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-sm transition"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>🕯️ הוסף יומן ימי זיכרון ל-Google</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={copyMemorialsUrl}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-amber-300 hover:bg-amber-50 text-slate-700 rounded-xl font-semibold text-xs transition cursor-pointer"
+                  >
+                    {copiedMemorials ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700 font-bold">קישור יומן הזיכרון הועתק!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                        <span>העתק קישור URL (יומן ימי זיכרון)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Calendar 2: Simchas (Birthdays & Anniversaries) */}
+              <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/40 p-4 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-950 border border-emerald-300">
+                      <Cake className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>יומן 2 • ימי הולדת ושמחות (בצבע נפרד!)</span>
+                    </span>
+                    <span className="text-xs font-bold text-emerald-900">{matchingSimchasCount} שמחות</span>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    <span className="block text-[11px] font-bold text-slate-700">שם יומן השמחות ב-Google:</span>
+                    <div className="w-full text-xs font-bold text-emerald-950 bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5 truncate">
+                      {simchaDisplayName}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-emerald-100/70 border border-emerald-200 text-[11px] text-emerald-950">
+                    <strong>יומן נפרד בצבע שונה:</strong> הוספת יומן זה יוצרת יומן שני ב-Google Calendar עבור 🎂 ימי הולדת עבריים, 💍 ימי נישואין ו-🥂 שמחות משפחתיות — כך שיופיעו בצבע נפרד מיומן היארצייט!
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <a
+                    href={simchasUrls.googleSub}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-sm transition"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>🎂💍 הוסף יומן שמחות ל-Google</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={copySimchasUrl}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-emerald-300 hover:bg-emerald-50 text-slate-700 rounded-xl font-semibold text-xs transition cursor-pointer"
+                  >
+                    {copiedSimchas ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700 font-bold">קישור יומן השמחות הועתק!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                        <span>העתק קישור URL (יומן שמחות)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {ownerDisplay && (
+              <p className="text-[11px] text-slate-500 text-center">
+                תיאור היומנים שיצורף אוטומטית ב-Google Calendar כולל: <strong>בעל היומן: {ownerDisplay}</strong>
+              </p>
+            )}
           </div>
 
           {/* Quick Guide */}
-          <div className="p-4 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900 space-y-2">
-            <div className="flex items-center gap-1.5 font-bold text-amber-950">
-              <HelpCircle className="w-4 h-4 text-amber-700" />
-              <span>איך מוסיפים ידנית ביומן גוגל במחשב או בטלפון?</span>
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1.5">
+            <div className="flex items-center gap-1.5 font-bold text-slate-900">
+              <HelpCircle className="w-4 h-4 text-blue-600" />
+              <span>איך שני היומנים מופיעים בצבעים שונים ב-Google Calendar?</span>
             </div>
-            <ol className="list-decimal list-inside space-y-1 pr-1 leading-relaxed text-slate-700">
-              <li>פותחים את <strong>Google Calendar</strong> בדפדפן.</li>
-              <li>בתפריט הצדדי ליד <strong>״יומנים אחרים״</strong> (Other calendars), לוחצים על <strong>+</strong> ובוחרים <strong>״מכתובת URL״</strong> (From URL).</li>
-              <li>מדביקים את הקישור שהועתק למעלה ולוחצים <strong>״הוסף יומן״</strong>.</li>
-            </ol>
-            <p className="text-[11px] text-amber-800 pt-1">
-              ✨ מעתה והלאה, ימי השנה של הנפטרים בענף ובמספר הדורות שבחרת יתעדכנו אוטומטית בכל שנה!
+            <p className="leading-relaxed">
+              כשלוחצים על שני הכפתורים למעלה (<strong>יומן ימי זיכרון</strong> ו-<strong>יומן שמחות</strong>), גוגל מוסיף אותם בתור <strong>שני יומנים נפרדים</strong> תחת &quot;יומנים אחרים&quot; ונותן לכל אחד צבע שונה אוטומטית (ותוכלו גם לבחור לכל אחד מהם כל צבע שתרצו בלחיצה על 3 הנקודות ליד שם היומן בגוגל).
             </p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex items-center justify-between">
-          <a
-            href={httpsUrl}
-            download="yahrzeits.ics"
-            className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-medium"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>הורד כקובץ .ICS חד-פעמי ({matchingDeceasedCount} נפטרים)</span>
-          </a>
+        <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-4">
+            <a
+              href={memorialsUrls.https}
+              download="yahrzeits.ics"
+              className="inline-flex items-center gap-1.5 text-xs text-amber-800 hover:text-amber-950 font-semibold"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>הורד קובץ ימי זיכרון (.ICS)</span>
+            </a>
+            <a
+              href={simchasUrls.https}
+              download="simchas.ics"
+              className="inline-flex items-center gap-1.5 text-xs text-emerald-800 hover:text-emerald-950 font-semibold"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>הורד קובץ שמחות (.ICS)</span>
+            </a>
+          </div>
 
           <button
             type="button"

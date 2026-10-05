@@ -1,4 +1,4 @@
-import { HDate, gematriya, months } from '@hebcal/core';
+import { HDate, gematriya, months, GeoLocation, Zmanim } from '@hebcal/core';
 
 export interface DeceasedRecord {
   id: string;
@@ -21,6 +21,7 @@ export interface DeceasedRecord {
   notes?: string;
   created_at?: string;
   is_living?: boolean;
+  simcha_type?: 'birthday' | 'anniversary' | 'simcha';
   lineage_path?: any[];
 }
 
@@ -287,13 +288,124 @@ export function formatBirthdayYearText(age: number): string {
   return `יום הולדת ${age} (שנת ה-${age})`;
 }
 
+export function formatSimchaYearText(
+  yearsOrPerson:
+    | number
+    | {
+        is_living?: boolean | null;
+        simcha_type?: 'birthday' | 'anniversary' | 'simcha' | null;
+        relationship?: string | null;
+        notes?: string | null;
+        title?: string | null;
+        lineage_path?: any[] | null;
+      },
+  simchaTypeOrYears:
+    | 'birthday'
+    | 'anniversary'
+    | 'simcha'
+    | number
+    | {
+        is_living?: boolean | null;
+        simcha_type?: 'birthday' | 'anniversary' | 'simcha' | null;
+        relationship?: string | null;
+        notes?: string | null;
+        title?: string | null;
+        lineage_path?: any[] | null;
+      } = 'birthday'
+): string {
+  const yearsPassed = typeof yearsOrPerson === 'number' ? yearsOrPerson : typeof simchaTypeOrYears === 'number' ? simchaTypeOrYears : 0;
+  const resolvedType: 'birthday' | 'anniversary' | 'simcha' =
+    typeof simchaTypeOrYears === 'string'
+      ? simchaTypeOrYears
+      : typeof yearsOrPerson === 'object' && yearsOrPerson !== null
+      ? getSimchaType(yearsOrPerson)
+      : typeof simchaTypeOrYears === 'object' && simchaTypeOrYears !== null
+      ? getSimchaType(simchaTypeOrYears)
+      : 'birthday';
+
+  if (resolvedType === 'anniversary') {
+    if (yearsPassed <= 0) return 'יום נישואין עברי';
+    return `${yearsPassed} שנות נישואין (שנת ה-${yearsPassed})`;
+  }
+  if (resolvedType === 'simcha') {
+    if (yearsPassed <= 0) return 'שמחה משפחתית';
+    return `שנת ה-${yearsPassed} לשמחה`;
+  }
+  return formatBirthdayYearText(yearsPassed);
+}
+
 /**
- * Checks whether a person record represents a living family member (יום הולדת עברי)
+ * Calculates the exact Halachic start and end times for a Hebrew Yahrzeit date in Israel (Asia/Jerusalem):
+ * - Starts at Tzeit HaKochavim (צאת הכוכבים) on the previous Gregorian evening (gregorianDate - 1 day).
+ * - Ends at Shkiat HaChama (שקיעת החמה) on the Gregorian day itself (gregorianDate).
+ */
+const JERUSALEM_GLOC = new GeoLocation('Jerusalem', 31.7683, 35.2137, 800, 'Asia/Jerusalem');
+
+export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
+  startTzeit: Date;
+  endShkia: Date;
+  startTzeitFormatted: string;
+  endShkiaFormatted: string;
+  startTimeFormatted: string;
+  endTimeFormatted: string;
+} {
+  const [y, m, d] = (gregorianDateStr || '').split('-').map(Number);
+  const baseYear = y || new Date().getFullYear();
+  const baseMonth = (m || 1) - 1;
+  const baseDay = d || 1;
+
+  // Fallback times (18:30 previous evening to 18:00 current day in UTC+3)
+  let startTzeit = new Date(Date.UTC(baseYear, baseMonth, baseDay - 1, 15, 30, 0));
+  let endShkia = new Date(Date.UTC(baseYear, baseMonth, baseDay, 15, 0, 0));
+
+  try {
+    const eveLocal = new Date(baseYear, baseMonth, baseDay - 1, 12, 0, 0);
+    const dayLocal = new Date(baseYear, baseMonth, baseDay, 12, 0, 0);
+
+    const zmanimEve = new Zmanim(JERUSALEM_GLOC, eveLocal, false);
+    const zmanimDay = new Zmanim(JERUSALEM_GLOC, dayLocal, false);
+
+    const calcTzeit = zmanimEve.tzeit();
+    const calcSunset = zmanimDay.sunset();
+
+    if (calcTzeit && !isNaN(calcTzeit.getTime())) {
+      startTzeit = calcTzeit;
+    }
+    if (calcSunset && !isNaN(calcSunset.getTime())) {
+      endShkia = calcSunset;
+    }
+  } catch {
+    // Keep safe fallback if Zmanim throws
+  }
+
+  const fmt = new Intl.DateTimeFormat('he-IL', {
+    timeZone: 'Asia/Jerusalem',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const startTzeitFormatted = fmt.format(startTzeit);
+  const endShkiaFormatted = fmt.format(endShkia);
+
+  return {
+    startTzeit,
+    endShkia,
+    startTzeitFormatted,
+    endShkiaFormatted,
+    startTimeFormatted: startTzeitFormatted,
+    endTimeFormatted: endShkiaFormatted,
+  };
+}
+
+/**
+ * Checks whether a person record represents a living family member / family simcha (יום הולדת / יום נישואין / שמחה)
  * rather than a deceased family member (יארצייט).
  */
 export function isPersonLiving(
   person?: {
     is_living?: boolean | null;
+    simcha_type?: 'birthday' | 'anniversary' | 'simcha' | null;
     relationship?: string | null;
     notes?: string | null;
     title?: string | null;
@@ -302,10 +414,24 @@ export function isPersonLiving(
 ): boolean {
   if (!person) return false;
   if (person.is_living === true) return true;
+  if (person.simcha_type) return true;
   const rel = (person.relationship || '').trim();
-  if (rel.includes('[בחיים]') || rel.startsWith('בחיים')) return true;
+  if (
+    rel.includes('[בחיים]') ||
+    rel.includes('[יום נישואין]') ||
+    rel.includes('[שמחה]') ||
+    rel.startsWith('בחיים')
+  ) {
+    return true;
+  }
   const notes = (person.notes || '').trim();
-  if (notes.includes('[בחיים]')) return true;
+  if (
+    notes.includes('[בחיים]') ||
+    notes.includes('[יום נישואין]') ||
+    notes.includes('[שמחה]')
+  ) {
+    return true;
+  }
   const title = (person.title || '').trim();
   if (
     title.includes('שליט״א') ||
@@ -327,12 +453,41 @@ export function isPersonLiving(
 }
 
 /**
- * Removes internal `[בחיים]` marker from display strings (relationship / notes).
+ * Determines the specific Simcha type for a living record ('birthday' | 'anniversary' | 'simcha').
+ */
+export function getSimchaType(
+  person?: {
+    is_living?: boolean | null;
+    simcha_type?: 'birthday' | 'anniversary' | 'simcha' | null;
+    relationship?: string | null;
+    notes?: string | null;
+    title?: string | null;
+    lineage_path?: any[] | null;
+  } | null
+): 'birthday' | 'anniversary' | 'simcha' {
+  if (!person) return 'birthday';
+  if (person.simcha_type) return person.simcha_type;
+  const rel = (person.relationship || '').trim();
+  const notes = (person.notes || '').trim();
+  if (rel.includes('[יום נישואין]') || notes.includes('[יום נישואין]') || rel.startsWith('יום נישואין')) {
+    return 'anniversary';
+  }
+  if (rel.includes('[שמחה]') || notes.includes('[שמחה]')) {
+    return 'simcha';
+  }
+  return 'birthday';
+}
+
+/**
+ * Removes internal `[בחיים]`, `[יום נישואין]`, `[שמחה]` markers from display strings (relationship / notes).
  */
 export function cleanLivingMarkerFromText(str?: string | null): string {
   if (!str) return '';
   return str
     .replace(/\[בחיים\]/g, '')
+    .replace(/\[יום נישואין\]/g, '')
+    .replace(/\[שמחה\]/g, '')
+    .replace(/\[יום הולדת\]/g, '')
     .replace(/^[\s•,-]+|[\s•,-]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -681,8 +836,13 @@ export function getGenerationRelationInfo(
   };
 }
 
+function formatDateToGoogleUtcTimestamp(dateObj: Date): string {
+  return dateObj.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
 /**
- * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit or Hebrew Birthday event.
+ * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit or Hebrew Birthday / Simcha event.
+ * For Yahrzeits, sets the exact Halachic start time at Tzeit HaKochavim (previous evening) and end time at Shkia (sunset).
  */
 export function getGoogleCalendarDirectAddUrl(
   person: DeceasedRecord & { lineage_path?: any[] },
@@ -691,10 +851,20 @@ export function getGoogleCalendarDirectAddUrl(
   appOrigin?: string
 ): string {
   const living = isPersonLiving(person);
+  const simchaType = getSimchaType(person);
   const fullDisplayName = getDeceasedFullName(person);
+
+  const simchaPrefix =
+    simchaType === 'anniversary'
+      ? '💍 יום נישואין עברי'
+      : simchaType === 'simcha'
+      ? '🥂 שמחה משפחתית'
+      : '🎂 יום הולדת עברי';
+
   const title = living
-    ? `🎂 יום הולדת עברי: ${fullDisplayName} (${formatBirthdayYearText(upcoming.yearsPassed)})`
-    : `יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+    ? `${simchaPrefix}: ${fullDisplayName} (${formatSimchaYearText(upcoming.yearsPassed, simchaType)})`
+    : `🕯️ יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+
   const originalDate = formatDisplayDateWithGregorian(
     person.hebrew_day,
     person.hebrew_month,
@@ -708,13 +878,16 @@ export function getGoogleCalendarDirectAddUrl(
   const lineageChain = formatLineageChainText(person.lineage_path);
   const lineageUrl = appOrigin && person.id ? `${appOrigin}?lineage=${person.id}` : '';
   const cleanNotes = cleanLivingMarkerFromText(person.notes);
+  const zmanimInfo = !living && upcoming.gregorianDateStr
+    ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr)
+    : null;
 
   const details = living
     ? [
-        `🎂 יום הולדת עברי של ${fullDisplayName}`,
-        upcoming.yearsPassed > 0 ? `גיל: ${upcoming.yearsPassed} (${formatBirthdayYearText(upcoming.yearsPassed)})` : '',
+        `${simchaPrefix} של ${fullDisplayName}`,
+        upcoming.yearsPassed > 0 ? `${formatSimchaYearText(upcoming.yearsPassed, simchaType)}` : '',
         relationLine,
-        `תאריך לידה עברי: ${originalDate}`,
+        `תאריך עברי מקורי: ${originalDate}`,
         branchName ? `ענף משפחתי: ${branchName}` : '',
         lineageChain ? `\n🔗 שרשרת היוחסין בעץ המשפחה:\n${lineageChain}` : '',
         lineageUrl ? `\nצפייה באילן המשפחתי:\n${lineageUrl}` : '',
@@ -724,6 +897,9 @@ export function getGoogleCalendarDirectAddUrl(
         .join('\n')
     : [
         `יום השנה לפטירת ${fullDisplayName}`,
+        zmanimInfo
+          ? `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם ומסתיים בשקיעה (${zmanimInfo.endShkiaFormatted})`
+          : '',
         relationLine,
         `תאריך עברי מקורי: ${originalDate}`,
         branchName ? `ענף משפחתי: ${branchName}` : '',
@@ -735,28 +911,36 @@ export function getGoogleCalendarDirectAddUrl(
         .filter(Boolean)
         .join('\n');
 
-  const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
-  let startStr: string;
-  let endStr: string;
-  if (y && m && d) {
-    const startUtc = new Date(Date.UTC(y, m - 1, d));
-    const endUtc = new Date(Date.UTC(y, m - 1, d + 1));
-    startStr = startUtc.toISOString().slice(0, 10).replace(/-/g, '');
-    endStr = endUtc.toISOString().slice(0, 10).replace(/-/g, '');
+  let datesParam = '';
+  if (!living && zmanimInfo) {
+    datesParam = `${formatDateToGoogleUtcTimestamp(zmanimInfo.startTzeit)}/${formatDateToGoogleUtcTimestamp(
+      zmanimInfo.endShkia
+    )}`;
   } else {
-    const start = new Date(upcoming.gregorianDate);
-    const sy = start.getFullYear();
-    const sm = String(start.getMonth() + 1).padStart(2, '0');
-    const sd = String(start.getDate()).padStart(2, '0');
-    startStr = `${sy}${sm}${sd}`;
-    const end = new Date(sy, start.getMonth(), start.getDate() + 1);
-    endStr = `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, '0')}${String(end.getDate()).padStart(2, '0')}`;
+    const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
+    let startStr: string;
+    let endStr: string;
+    if (y && m && d) {
+      const startUtc = new Date(Date.UTC(y, m - 1, d));
+      const endUtc = new Date(Date.UTC(y, m - 1, d + 1));
+      startStr = startUtc.toISOString().slice(0, 10).replace(/-/g, '');
+      endStr = endUtc.toISOString().slice(0, 10).replace(/-/g, '');
+    } else {
+      const start = new Date(upcoming.gregorianDate);
+      const sy = start.getFullYear();
+      const sm = String(start.getMonth() + 1).padStart(2, '0');
+      const sd = String(start.getDate()).padStart(2, '0');
+      startStr = `${sy}${sm}${sd}`;
+      const end = new Date(sy, start.getMonth(), start.getDate() + 1);
+      endStr = `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, '0')}${String(end.getDate()).padStart(2, '0')}`;
+    }
+    datesParam = `${startStr}/${endStr}`;
   }
 
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: title,
-    dates: `${startStr}/${endStr}`,
+    dates: datesParam,
     details: details,
   });
 
@@ -1077,6 +1261,20 @@ export function formatCalendarDisplayName(
   return `ימי זיכרון - יומן משפחת ${base}`;
 }
 
+export function formatSimchaCalendarDisplayName(
+  rawCalendarName?: string | null,
+  customDisplayName?: string | null
+): string {
+  const baseName = formatCalendarDisplayName(rawCalendarName, customDisplayName);
+  if (baseName.startsWith('ימי הולדת ושמחות')) {
+    return baseName;
+  }
+  if (baseName.startsWith('ימי זיכרון')) {
+    return baseName.replace(/^ימי זיכרון\s*-?\s*/, 'ימי הולדת ושמחות - ');
+  }
+  return `ימי הולדת ושמחות - ${baseName}`;
+}
+
 /**
  * Formats the calendar description to always include the calendar owner's name ("בעל היומן: ...").
  */
@@ -1097,9 +1295,10 @@ export function formatCalendarDescription(
     return customDesc;
   }
   if (ownerName) {
-    return `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית | בעל היומן: ${ownerName}`;
+    return `לוח שנה משפחתי מתעדכן אוטומטית | בעל היומן: ${ownerName}`;
   }
-  return 'לוח ימי פטירה (יארצייט) מתעדכן אוטומטית';
+  return 'לוח שנה משפחתי מתעדכן אוטומטית';
 }
+
 
 

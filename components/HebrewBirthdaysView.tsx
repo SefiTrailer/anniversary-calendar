@@ -5,7 +5,8 @@ import { DeceasedPerson, FamilyBranch } from '@/lib/types';
 import {
   formatDisplayDateWithGregorian,
   calculateUpcomingYahrzeits,
-  formatBirthdayYearText,
+  formatSimchaYearText,
+  getSimchaType,
   getGoogleCalendarDirectAddUrl,
   getDeceasedFormattedParts,
   getGenerationRelationInfo,
@@ -15,6 +16,8 @@ import {
 } from '@/lib/hebrew-calendar';
 import {
   Cake,
+  Heart,
+  PartyPopper,
   Search,
   Plus,
   Edit3,
@@ -26,6 +29,7 @@ import {
   Filter,
   ArrowUpDown,
   Users,
+  ExternalLink,
 } from 'lucide-react';
 
 interface HebrewBirthdaysViewProps {
@@ -33,10 +37,12 @@ interface HebrewBirthdaysViewProps {
   branches: FamilyBranch[];
   isAdmin: boolean;
   userGeneration?: number;
-  onAddLiving: () => void;
+  simchasWebcalUrl?: string;
+  onAddLiving: (simchaType?: 'birthday' | 'anniversary' | 'simcha') => void;
   onEdit: (person: DeceasedPerson) => void;
   onDelete: (id: string) => void;
   onOpenLineage?: (person: DeceasedPerson) => void;
+  onOpenSyncModal?: () => void;
 }
 
 export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
@@ -44,13 +50,16 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
   branches,
   isAdmin,
   userGeneration = 1,
+  simchasWebcalUrl,
   onAddLiving,
   onEdit,
   onDelete,
   onOpenLineage,
+  onOpenSyncModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
+  const [selectedSimchaFilter, setSelectedSimchaFilter] = useState<'all' | 'birthday' | 'anniversary' | 'simcha'>('all');
   const [selectedGenGroup, setSelectedGenGroup] = useState<'all' | 'descendants' | 'peers' | 'parents' | 'grandparents'>('all');
   const [sortBy, setSortBy] = useState<'upcoming' | 'name' | 'generation'>('upcoming');
 
@@ -60,6 +69,19 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
     () => deceased.filter((d) => isPersonLiving(d)),
     [deceased]
   );
+
+  const countsByType = useMemo(() => {
+    let birthdays = 0;
+    let anniversaries = 0;
+    let simchas = 0;
+    livingPeople.forEach((p) => {
+      const t = getSimchaType(p);
+      if (t === 'anniversary') anniversaries++;
+      else if (t === 'simcha') simchas++;
+      else birthdays++;
+    });
+    return { birthdays, anniversaries, simchas, total: livingPeople.length };
+  }, [livingPeople]);
 
   const livingWithUpcoming = useMemo(() => {
     return livingPeople.map((person) => {
@@ -82,6 +104,7 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
       }
       return {
         person,
+        simchaType: getSimchaType(person),
         upcoming,
         daysUntil,
         branch: branchMap.get(person.branch_id),
@@ -100,7 +123,10 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return livingWithUpcoming
-      .filter(({ person }) => {
+      .filter(({ person, simchaType }) => {
+        if (selectedSimchaFilter !== 'all' && simchaType !== selectedSimchaFilter) {
+          return false;
+        }
         if (selectedBranchFilter !== 'all' && person.branch_id !== selectedBranchFilter) {
           return false;
         }
@@ -125,49 +151,88 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
         const nameB = `${b.person.last_name} ${b.person.first_name}`;
         return nameA.localeCompare(nameB, 'he');
       });
-  }, [livingWithUpcoming, searchQuery, selectedBranchFilter, selectedGenGroup, sortBy]);
+  }, [livingWithUpcoming, searchQuery, selectedSimchaFilter, selectedBranchFilter, selectedGenGroup, sortBy]);
 
   return (
     <div className="space-y-6">
       {/* Top Banner */}
       <div className="bg-gradient-to-l from-emerald-900 via-teal-800 to-slate-900 text-white rounded-2xl p-6 shadow-lg border border-emerald-700/50">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-xs font-bold">
               <Cake className="w-3.5 h-3.5" />
-              <span>ימי הולדת עבריים והמשך בניית עץ המשפחה</span>
+              <span>תת-ממשק שמחות משפחתיות • מחובר לעץ המשפחה וליומן</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-white">
-              🎂 ימי הולדת עבריים של בני המשפחה החיים ({livingPeople.length})
+              🎂💍 ימי הולדת, ימי נישואין ושמחות משפחתיות ({livingPeople.length})
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/90 max-w-2xl leading-relaxed">
-              כאן ניתן להוסיף ולנהל את ימי ההולדת העבריים של בני המשפחה החיים (הורים, אחים, ילדים, נכדים ונינים).
-              כל דמות שתוסיפו משתלבת אוטומטית בעץ המשפחה המלא ומאפשרת לבנות את העץ הלאה לדורות הבאים.
+              כאן מנהלים את כל תאריכי השמחות העבריים של המשפחה — ימי הולדת, ימי נישואין ואירועים משפחתיים.
+              ניתן לסנכרן את יומן השמחות כ<strong>יומן נפרד ב-Google Calendar</strong> כך שיופיע ביומן שלכם ב<strong>צבע שונה ונפרד</strong> מיומן ימי הזיכרון!
             </p>
           </div>
 
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={onAddLiving}
-              className="shrink-0 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-md transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>הוסף יום הולדת עברי לבן/בת משפחה</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onAddLiving('birthday')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-md transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>🎂 הוסף יום הולדת עברי</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAddLiving('anniversary')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-pink-500 hover:bg-pink-400 text-white font-extrabold text-xs sm:text-sm shadow-md transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>💍 הוסף יום נישואין / שמחה</span>
+                </button>
+              </>
+            )}
+
+            {simchasWebcalUrl && (
+              <a
+                href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(simchasWebcalUrl)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/30 text-white font-bold text-xs sm:text-sm transition shadow-sm"
+              >
+                <CalendarIcon className="w-4 h-4 text-emerald-300" />
+                <span>סנכרן יומן שמחות (בצבע נפרד)</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+              </a>
+            )}
+          </div>
         </div>
 
-        {/* Upcoming Birthdays in Next 30 Days */}
+        {/* Upcoming Simchas in Next 30 Days */}
         {upcoming30Days.length > 0 && (
           <div className="mt-5 pt-4 border-t border-emerald-700/60">
             <div className="text-xs font-bold text-emerald-200 mb-2.5 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>ימי הולדת עבריים ב-30 הימים הקרובים ({upcoming30Days.length}):</span>
+              <span>שמחות וימי הולדת ב-30 הימים הקרובים ({upcoming30Days.length}):</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {upcoming30Days.map(({ person, upcoming, daysUntil, branch }) => {
+              {upcoming30Days.map(({ person, simchaType, upcoming, daysUntil }) => {
                 const parts = getDeceasedFormattedParts(person);
+                const icon = simchaType === 'anniversary' ? '💍' : simchaType === 'simcha' ? '🥂' : '🎂';
+                const label =
+                  upcoming && upcoming.yearsPassed > 0
+                    ? simchaType === 'anniversary'
+                      ? `יום נישואין ${upcoming.yearsPassed}`
+                      : simchaType === 'simcha'
+                      ? `${upcoming.yearsPassed} שנים`
+                      : `יום הולדת ${upcoming.yearsPassed}`
+                    : simchaType === 'anniversary'
+                    ? 'יום נישואין עברי'
+                    : simchaType === 'simcha'
+                    ? 'שמחה משפחתית'
+                    : 'יום הולדת עברי';
+
                 return (
                   <div
                     key={person.id}
@@ -175,13 +240,10 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
                   >
                     <div className="min-w-0">
                       <div className="font-bold text-sm text-white truncate">
-                        🎂 {parts.fullName}
+                        {icon} {parts.fullName}
                       </div>
                       <div className="text-xs text-emerald-200 truncate">
-                        {upcoming?.hebrewDateStr} •{' '}
-                        {upcoming && upcoming.yearsPassed > 0
-                          ? `יום הולדת ${upcoming.yearsPassed}`
-                          : 'יום הולדת עברי'}
+                        {upcoming?.hebrewDateStr} • {label}
                       </div>
                     </div>
                     <span
@@ -207,6 +269,66 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
 
       {/* Filters & Search Bar */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
+        {/* Simcha Category Pills */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedSimchaFilter('all')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                selectedSimchaFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              כל השמחות ({countsByType.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSimchaFilter('birthday')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                selectedSimchaFilter === 'birthday'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+              }`}
+            >
+              <span>🎂 ימי הולדת ({countsByType.birthdays})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSimchaFilter('anniversary')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                selectedSimchaFilter === 'anniversary'
+                  ? 'bg-pink-600 text-white shadow-xs'
+                  : 'bg-pink-50 text-pink-800 hover:bg-pink-100 border border-pink-200'
+              }`}
+            >
+              <span>💍 ימי נישואין ({countsByType.anniversaries})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSimchaFilter('simcha')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                selectedSimchaFilter === 'simcha'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+              }`}
+            >
+              <span>🥂 שמחות נוספות ({countsByType.simchas})</span>
+            </button>
+          </div>
+
+          {onOpenSyncModal && (
+            <button
+              type="button"
+              onClick={onOpenSyncModal}
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition cursor-pointer"
+            >
+              ⚙️ הגדרות סינון דורות וסנכרון 2 יומנים (זיכרון + שמחות)
+            </button>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {/* Search */}
           <div className="relative md:col-span-2">
@@ -215,7 +337,7 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="חיפוש בן/בת משפחה לפי שם, שם הורה או קרבה..."
+              placeholder="חיפוש לפי שם, בני זוג, שם הורה או קרבה..."
               className="w-full pr-10 pl-4 py-2 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
             />
           </div>
@@ -245,7 +367,7 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
               onChange={(e) => setSortBy(e.target.value as any)}
               className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
             >
-              <option value="upcoming">מיון: יום ההולדת הקרוב ביותר</option>
+              <option value="upcoming">מיון: התאריך הקרוב ביותר</option>
               <option value="name">מיון: לפי שם משפחה ושם פרטי</option>
               <option value="generation">מיון: לפי דור בעץ המשפחה</option>
             </select>
@@ -286,29 +408,39 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
           <div className="space-y-1.5 max-w-md mx-auto">
             <h3 className="text-lg font-bold text-slate-900">
               {livingPeople.length === 0
-                ? 'עדיין לא נוספו ימי הולדת עבריים של בני המשפחה החיים'
-                : 'לא נמצאו בני משפחה התואמים לסינון שנבחר'}
+                ? 'עדיין לא נוספו ימי הולדת או ימי נישואין ללוח השמחות'
+                : 'לא נמצאו תאריכי שמחות התואמים לסינון שנבחר'}
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              הוספת בני המשפחה החיים עם תאריך הלידה העברי שלהם מאפשרת לקבל תזכורות לימי הולדת עבריים ביומן,
-              ולבנות את עץ המשפחה הלאה (ובמקרה של פטירה ח״ו — להעביר את הרשומה למצב יארצייט בלחיצה אחת בלי לאבד את חיבורי העץ).
+              הוסיפו ימי הולדת עבריים, ימי נישואין ושמחות של בני המשפחה. כל תאריך יחושב מדי שנה לפי הלוח העברי,
+              ישתלב בעץ המשפחה ויוכל להסתנכרן כיומן שמחות נפרד (בצבע שונה) ל-Google Calendar.
             </p>
           </div>
-          {isAdmin && livingPeople.length === 0 && (
-            <button
-              type="button"
-              onClick={onAddLiving}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>הוסף בן/בת משפחה ראשון ללוח ימי ההולדת</span>
-            </button>
+          {isAdmin && (
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => onAddLiving('birthday')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>🎂 הוסף יום הולדת עברי</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAddLiving('anniversary')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-sm shadow transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>💍 הוסף יום נישואין עברי</span>
+              </button>
+            </div>
           )}
         </div>
       ) : (
         /* Cards Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredAndSorted.map(({ person, upcoming, daysUntil, branch }) => {
+          {filteredAndSorted.map(({ person, simchaType, upcoming, daysUntil, branch }) => {
             const parts = getDeceasedFormattedParts(person);
             const genInfo = getGenerationRelationInfo(person, userGeneration);
             const parentLine = formatLeiluyNishmat(person);
@@ -316,7 +448,10 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
             const cleanNotes = cleanLivingMarkerFromText(person.notes);
             const hasLineage = Array.isArray(person.lineage_path) && person.lineage_path.length > 0;
 
-            const birthDateDisplay = formatDisplayDateWithGregorian(
+            const isAnniv = simchaType === 'anniversary';
+            const isOtherSimcha = simchaType === 'simcha';
+
+            const dateDisplay = formatDisplayDateWithGregorian(
               person.hebrew_day,
               person.hebrew_month,
               person.hebrew_year,
@@ -326,15 +461,33 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
             return (
               <div
                 key={person.id}
-                className="bg-white rounded-2xl border border-emerald-200/90 shadow-xs hover:shadow-md transition overflow-hidden flex flex-col justify-between"
+                className={`bg-white rounded-2xl border shadow-xs hover:shadow-md transition overflow-hidden flex flex-col justify-between ${
+                  isAnniv
+                    ? 'border-pink-200/90'
+                    : isOtherSimcha
+                    ? 'border-purple-200/90'
+                    : 'border-emerald-200/90'
+                }`}
               >
                 <div className="p-5 space-y-3.5">
                   {/* Top Badges */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      <Cake className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>בחיים • יום הולדת עברי</span>
-                    </span>
+                    {isAnniv ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-pink-50 text-pink-800 border border-pink-200">
+                        <Heart className="w-3.5 h-3.5 text-pink-600" />
+                        <span>💍 יום נישואין עברי</span>
+                      </span>
+                    ) : isOtherSimcha ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                        <PartyPopper className="w-3.5 h-3.5 text-purple-600" />
+                        <span>🥂 שמחה משפחתית</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <Cake className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>🎂 יום הולדת עברי</span>
+                      </span>
+                    )}
 
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
@@ -357,7 +510,11 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
                       {parts.fullName}
                     </h3>
                     {cleanRel && (
-                      <p className="text-xs font-semibold text-emerald-700 mt-0.5">
+                      <p
+                        className={`text-xs font-semibold mt-0.5 ${
+                          isAnniv ? 'text-pink-700' : isOtherSimcha ? 'text-purple-700' : 'text-emerald-700'
+                        }`}
+                      >
                         קרבה: {cleanRel}
                       </p>
                     )}
@@ -369,28 +526,44 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
                     )}
                   </div>
 
-                  {/* Birth Date Box */}
-                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3 space-y-1.5">
+                  {/* Date Box */}
+                  <div
+                    className={`rounded-xl p-3 space-y-1.5 border ${
+                      isAnniv
+                        ? 'bg-pink-50/60 border-pink-200/80'
+                        : isOtherSimcha
+                        ? 'bg-purple-50/60 border-purple-200/80'
+                        : 'bg-emerald-50/60 border-emerald-200/80'
+                    }`}
+                  >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-600 font-medium">תאריך לידה עברי:</span>
-                      <span className="font-bold text-slate-900">{birthDateDisplay}</span>
+                      <span className="text-slate-600 font-medium">
+                        {isAnniv ? 'תאריך נישואין עברי:' : isOtherSimcha ? 'תאריך השמחה:' : 'תאריך לידה עברי:'}
+                      </span>
+                      <span className="font-bold text-slate-900">{dateDisplay}</span>
                     </div>
 
                     {upcoming && (
                       <>
-                        <div className="flex items-center justify-between text-xs pt-1 border-t border-emerald-200/60">
-                          <span className="text-slate-600 font-medium">יום ההולדת הקרוב:</span>
-                          <span className="font-bold text-emerald-900">
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                          <span className="text-slate-600 font-medium">התאריך הקרוב:</span>
+                          <span className="font-bold text-slate-900">
                             {upcoming.hebrewDateStr} (
                             {upcoming.gregorianDate.toLocaleDateString('he-IL')})
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-600 font-medium">גיל ביום ההולדת הקרוב:</span>
-                          <span className="font-extrabold text-emerald-700">
+                          <span className="text-slate-600 font-medium">
+                            {isAnniv ? 'שנות נישואין:' : isOtherSimcha ? 'ציון שנים:' : 'גיל ביום ההולדת הקרוב:'}
+                          </span>
+                          <span
+                            className={`font-extrabold ${
+                              isAnniv ? 'text-pink-700' : isOtherSimcha ? 'text-purple-700' : 'text-emerald-700'
+                            }`}
+                          >
                             {upcoming.yearsPassed > 0
-                              ? formatBirthdayYearText(upcoming.yearsPassed)
-                              : 'שנת הלידה'}
+                              ? formatSimchaYearText(person, upcoming.yearsPassed)
+                              : 'השנה הראשונה'}
                           </span>
                         </div>
                       </>
@@ -417,7 +590,13 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
                         )}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-2xs"
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition shadow-2xs ${
+                          isAnniv
+                            ? 'bg-pink-600 hover:bg-pink-700'
+                            : isOtherSimcha
+                            ? 'bg-purple-600 hover:bg-purple-700'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
                       >
                         <CalendarIcon className="w-3.5 h-3.5" />
                         <span>הוסף ליומן Google</span>
@@ -449,7 +628,7 @@ export const HebrewBirthdaysView: React.FC<HebrewBirthdaysViewProps> = ({
                         <button
                           type="button"
                           onClick={() => onEdit(person)}
-                          title="עריכת פרטים / מעבר למצב פטירה ח״ו"
+                          title="עריכת פרטים"
                           className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
                         >
                           <Edit3 className="w-4 h-4" />
