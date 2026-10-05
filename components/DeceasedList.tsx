@@ -304,7 +304,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
         </div>
 
         {/* Category Filter Pills: All / Holocaust / Ancestors */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar border-b border-slate-100/80">
+        <div className="flex items-center gap-2 flex-wrap pb-2 pt-1 border-b border-slate-100/80">
           <span className="text-xs font-bold text-slate-500 shrink-0 ml-1">קטגוריה:</span>
           
           <button
@@ -394,7 +394,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
         {/* Hierarchical Branch Filtering: Main Branch (Gen 2) -> Grandparent (Gen 3) -> Great-Grandparent (Gen 4) */}
         <div className="bg-slate-50/70 rounded-2xl p-3.5 border border-slate-200/80 space-y-3">
           {/* Level 1: Main Branch (ענף מרכזי — הורים / דור 2) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <div className="flex items-center gap-2 flex-wrap">
             <GitBranch className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />
             <span className="text-xs font-extrabold text-slate-700 shrink-0">ענף מרכזי (הורים):</span>
             <button
@@ -455,7 +455,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
 
           {/* Level 2: Grandparents Sub-Branches (תת-ענפים מסבא וסבתא — דור 3) */}
           {visibleGrandparentBranches.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-2 border-t border-slate-200/60 no-scrollbar">
+            <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200/60">
               <Filter className="w-3.5 h-3.5 text-indigo-500 shrink-0 ml-1" />
               <span className="text-xs font-bold text-slate-600 shrink-0">תת-ענף (סבא וסבתא • דור 3):</span>
               <button
@@ -506,7 +506,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
 
           {/* Level 3: Great-Grandparents Sub-Branches (תת-ענפים מסבא-רבא וסבתא-רבתא — דור 4 בלבד) */}
           {visibleGreatGrandparentBranches.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-2 border-t border-slate-200/60 no-scrollbar">
+            <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200/60">
               <Layers className="w-3.5 h-3.5 text-amber-600 shrink-0 ml-1" />
               <span className="text-xs font-bold text-slate-600 shrink-0" title="חלוקת תתי-הענפים נעצרת בדור 4 (סבא-רבא וסבתא-רבתא) וכוללת את כל הדורות שמעליהם בעץ">
                 סבא-רבא וסבתא-רבתא (דור 4):
@@ -560,7 +560,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
         {/* Generation Depth Range Filter (עד איזה דור להציג) & Specific Generation Filter */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           {/* Max Generations Depth Selector */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 flex-wrap">
             <GitCommit className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />
             <span className="text-xs font-extrabold text-slate-700 shrink-0">עומק דורות בעץ:</span>
             <select
@@ -585,7 +585,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
           </div>
 
           {/* Specific Single Generation Filter */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-500 shrink-0">דור ספציפי:</span>
             <select
               value={selectedGenerationFilter}
