@@ -13,6 +13,7 @@ import {
   extractBranchHierarchy,
   matchesBranchHierarchyFilter,
   getPersonLineageBranchKeys,
+  isPersonLiving,
 } from '@/lib/hebrew-calendar';
 import {
   Search,
@@ -61,7 +62,7 @@ interface DeceasedListProps {
 }
 
 export const DeceasedList: React.FC<DeceasedListProps> = ({
-  deceased,
+  deceased: rawDeceased,
   branches,
   isAdmin,
   userGeneration = 1,
@@ -69,6 +70,9 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
   onDelete,
   onOpenLineage,
 }) => {
+  // Exclude living family members from the Yahrzeit memorial list
+  const deceased = useMemo(() => rawDeceased.filter((d) => !isPersonLiving(d)), [rawDeceased]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | 'holocaust' | 'ancestors' | 'direct' | 'non_direct'>('all');
   const [selectedMainBranch, setSelectedMainBranch] = useState<string>('all'); // Gen 2 (צד אבא / צד אמא)

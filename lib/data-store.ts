@@ -482,20 +482,46 @@ export const DataStore = {
   },
 
   async addDeceased(deceased: DeceasedPerson) {
+    const dbRecord: any = { ...deceased };
+    if (typeof dbRecord.is_living === 'boolean') {
+      const cleanRel = (dbRecord.relationship || '').replace(/\[בחיים\]/g, '').trim();
+      if (dbRecord.is_living) {
+        dbRecord.relationship = cleanRel ? `[בחיים] ${cleanRel}` : '[בחיים] בן/בת משפחה';
+      } else {
+        dbRecord.relationship = cleanRel || undefined;
+        if (dbRecord.notes) {
+          dbRecord.notes = dbRecord.notes.replace(/\[בחיים\]/g, '').trim();
+        }
+      }
+      delete dbRecord.is_living;
+    }
     try {
-      const { data } = await supabase.from('deceased').insert(deceased).select().single();
+      const { data } = await supabase.from('deceased').insert(dbRecord).select().single();
       if (data) return data as DeceasedPerson;
     } catch (err) {
       console.error('Supabase addDeceased error:', err);
     }
     const cache = getCache();
-    cache.deceased.push(deceased);
-    return deceased;
+    cache.deceased.push({ ...deceased, ...dbRecord });
+    return { ...deceased, ...dbRecord };
   },
 
   async updateDeceased(id: string, updates: Partial<DeceasedPerson>) {
+    const dbUpdates: any = { ...updates };
+    if (typeof dbUpdates.is_living === 'boolean') {
+      const cleanRel = (dbUpdates.relationship || '').replace(/\[בחיים\]/g, '').trim();
+      if (dbUpdates.is_living) {
+        dbUpdates.relationship = cleanRel ? `[בחיים] ${cleanRel}` : '[בחיים] בן/בת משפחה';
+      } else {
+        dbUpdates.relationship = cleanRel || null;
+        if (typeof dbUpdates.notes === 'string') {
+          dbUpdates.notes = dbUpdates.notes.replace(/\[בחיים\]/g, '').trim();
+        }
+      }
+      delete dbUpdates.is_living;
+    }
     try {
-      const { data } = await supabase.from('deceased').update(updates).eq('id', id).select().single();
+      const { data } = await supabase.from('deceased').update(dbUpdates).eq('id', id).select().single();
       if (data) return data as DeceasedPerson;
     } catch (err) {
       console.error('Supabase updateDeceased error:', err);
@@ -503,7 +529,7 @@ export const DataStore = {
     const cache = getCache();
     const idx = cache.deceased.findIndex(d => d.id === id);
     if (idx !== -1) {
-      cache.deceased[idx] = { ...cache.deceased[idx], ...updates };
+      cache.deceased[idx] = { ...cache.deceased[idx], ...dbUpdates };
       return cache.deceased[idx];
     }
     return null;

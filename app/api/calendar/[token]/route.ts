@@ -12,6 +12,8 @@ import {
   matchesBranchHierarchyFilter,
   formatCalendarDisplayName,
   formatCalendarDescription,
+  isPersonLiving,
+  cleanLivingMarkerFromText,
 } from '@/lib/hebrew-calendar';
 
 export async function GET(
@@ -37,11 +39,17 @@ export async function GET(
   const querySubBranch = request.nextUrl.searchParams.get('subBranch');
   const queryMaxGen = request.nextUrl.searchParams.get('maxGen');
   const queryCalName = request.nextUrl.searchParams.get('calName');
+  const queryBirthdays = request.nextUrl.searchParams.get('birthdays');
 
   const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
   if (rawSelected.includes('status:pending')) {
     return new NextResponse('הבקשה להצטרף לענף ממתינה לאישור בעל היומן', { status: 403 });
   }
+
+  const includeBirthdays =
+    queryBirthdays !== null
+      ? queryBirthdays !== 'false'
+      : !rawSelected.includes('birthdays:false');
 
   // Extract any stored maxGen:N, calName:..., or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
   const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
@@ -68,6 +76,7 @@ export async function GET(
 
   const filteredDeceased = allDeceased.filter(d => {
     if (!d.hebrew_day || !d.hebrew_month) return false;
+    if (!includeBirthdays && isPersonLiving(d)) return false;
     if (!targetBranchIds.includes(d.branch_id)) return false;
 
     if (activeSubBranches.length > 0) {
@@ -93,7 +102,12 @@ export async function GET(
       branchMap.set(lb.id, lb.name);
     }
     for (const ld of linkedDeceased) {
-      if (ld.hebrew_day && ld.hebrew_month && !filteredDeceased.some(existing => existing.id === ld.id)) {
+      if (
+        ld.hebrew_day &&
+        ld.hebrew_month &&
+        (includeBirthdays || !isPersonLiving(ld)) &&
+        !filteredDeceased.some(existing => existing.id === ld.id)
+      ) {
         filteredDeceased.push(ld);
       }
     }
@@ -129,8 +143,9 @@ export async function GET(
 
   const pendingEvents: PendingIcsEvent[] = [];
 
-  // Calculate yahrzeits for the current Hebrew year + next 2 years (includePassedThisYear = true so the full current year is present)
+  // Calculate yahrzeits & Hebrew birthdays for the current Hebrew year + next 2 years
   for (const dec of filteredDeceased) {
+    const living = isPersonLiving(dec);
     const branchName = (branchMap.get(dec.branch_id) || 'כללי').normalize('NFKC');
     const upcomingList = calculateUpcomingYahrzeits(dec, 3, true);
 
@@ -171,8 +186,9 @@ export async function GET(
     ).normalize('NFKC');
     const lineageUrl = `${request.nextUrl.origin}/?lineage=${dec.id}`;
 
-    const cleanNotes = dec.notes
-      ? dec.notes
+    const rawNotes = cleanLivingMarkerFromText(dec.notes);
+    const cleanNotes = rawNotes
+      ? rawNotes
           .normalize('NFKC')
           .replace(/\s+/g, ' ')
           .trim()
@@ -187,28 +203,48 @@ export async function GET(
       const startDate = new Date(Date.UTC(y, m - 1, d));
       const endDate = new Date(Date.UTC(y, m - 1, d + 1));
 
-      const yearsPassedText = upcoming.yearsPassed > 0 ? ` (שנת ה-${upcoming.yearsPassed})` : '';
+      const yearsPassedText =
+        upcoming.yearsPassed > 0
+          ? living
+            ? ` (גיל ${upcoming.yearsPassed})`
+            : ` (שנת ה-${upcoming.yearsPassed})`
+          : '';
 
       pendingEvents.push({
-        id: `yahrzeit-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
+        id: `${living ? 'birthday' : 'yahrzeit'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
         gregorianDateStr: upcoming.gregorianDateStr,
         startDate,
         endDate,
         isUpcomingFromToday: upcoming.gregorianDateStr >= todayUtcStr,
-        summary: `יארצייט: ${conciseName}${yearsPassedText}`,
-        description: [
-          `יום השנה לפטירת ${fullDisplayName}`,
-          leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
-          relationLine,
-          `תאריך עברי: ${originalDateFormatted}`,
-          `ענף משפחתי: ${branchName}`,
-          lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
-          cleanNotes ? `הערות: ${cleanNotes}` : '',
-          dec.after_sunset ? 'הערה הלכתית: הפטירה לאחר שקיעה/צאת הכוכבים.' : '',
-          `צפייה באילן: ${lineageUrl}`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
+        summary: living
+          ? `🎂 יום הולדת עברי: ${conciseName}${yearsPassedText}`
+          : `יארצייט: ${conciseName}${yearsPassedText}`,
+        description: living
+          ? [
+              `🎂 יום הולדת עברי של ${fullDisplayName}`,
+              leiluyText ? `ייחוס להורים: ${leiluyText}` : '',
+              relationLine,
+              `תאריך לידה עברי: ${originalDateFormatted}`,
+              `ענף משפחתי: ${branchName}`,
+              lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
+              cleanNotes ? `הערות: ${cleanNotes}` : '',
+              `צפייה באילן: ${lineageUrl}`,
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : [
+              `יום השנה לפטירת ${fullDisplayName}`,
+              leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
+              relationLine,
+              `תאריך עברי: ${originalDateFormatted}`,
+              `ענף משפחתי: ${branchName}`,
+              lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
+              cleanNotes ? `הערות: ${cleanNotes}` : '',
+              dec.after_sunset ? 'הערה הלכתית: הפטירה לאחר שקיעה/צאת הכוכבים.' : '',
+              `צפייה באילן: ${lineageUrl}`,
+            ]
+              .filter(Boolean)
+              .join('\n'),
       });
     }
   }

@@ -52,6 +52,7 @@ export interface DeceasedPerson {
   created_at: string;
   lineage_path?: any[];
   geni_profile_id?: string | null;
+  is_living?: boolean;
 }
 
 export interface UserMembership {

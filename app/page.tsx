@@ -14,6 +14,7 @@ import { GemImportModal } from '@/components/GemImportModal';
 import { JoinBranchModal } from '@/components/JoinBranchModal';
 import { FamilyTreeView } from '@/components/FamilyTreeView';
 import { MissingDatesView } from '@/components/MissingDatesView';
+import { HebrewBirthdaysView } from '@/components/HebrewBirthdaysView';
 import LineageModal from '@/components/LineageModal';
 import {
   CalendarProject,
@@ -32,6 +33,7 @@ import {
   formatLeiluyNishmat,
   formatCalendarDisplayName,
   formatCalendarDescription,
+  isPersonLiving,
 } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
@@ -61,6 +63,7 @@ import {
   ChevronUp,
   Pencil,
   Link2,
+  Cake,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -99,6 +102,7 @@ export default function HomePage() {
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [defaultModalIsLiving, setDefaultModalIsLiving] = useState(false);
   const [isBranchesModalOpen, setIsBranchesModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -114,7 +118,7 @@ export default function HomePage() {
     branchIds?: string[];
     autoApprove?: boolean;
   } | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'birthdays' | 'missing'>('list');
   const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
   const [isEditingCalendarInfo, setIsEditingCalendarInfo] = useState(false);
@@ -693,6 +697,7 @@ export default function HomePage() {
 
     return targetDeceased
       .map((d) => {
+        if (isPersonLiving(d)) return null;
         if (!d.hebrew_day || !d.hebrew_month) return null;
         try {
           const upList = calculateUpcomingYahrzeits(d, 1);
@@ -712,8 +717,16 @@ export default function HomePage() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [targetDeceased, isViewingSomething]);
 
+  const livingCount = useMemo(() => {
+    return deceased.filter((p) => isPersonLiving(p)).length;
+  }, [deceased]);
+
+  const deceasedOnlyCount = useMemo(() => {
+    return deceased.filter((p) => !isPersonLiving(p)).length;
+  }, [deceased]);
+
   const missingDatesCount = useMemo(() => {
-    return deceased.filter(p => !p.hebrew_day || !p.hebrew_month).length;
+    return deceased.filter((p) => !isPersonLiving(p) && (!p.hebrew_day || !p.hebrew_month)).length;
   }, [deceased]);
 
   // Check for direct lineage link in URL (?lineage=[id])
@@ -783,6 +796,7 @@ export default function HomePage() {
         onOpenBranches={() => setIsBranchesModalOpen(true)}
         onOpenAddDeceased={() => {
           setEditingDeceased(null);
+          setDefaultModalIsLiving(false);
           setIsAddModalOpen(true);
         }}
         onOpenGemImport={() => setIsGemImportModalOpen(true)}
@@ -1371,6 +1385,22 @@ export default function HomePage() {
               </button>
 
               <div className="flex items-center gap-2 flex-wrap">
+                {/* Add Living Family Member / Hebrew Birthday Button */}
+                {canEdit && (
+                  <button
+                    onClick={() => {
+                      setEditingDeceased(null);
+                      setDefaultModalIsLiving(true);
+                      setIsAddModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                    title="הוסף יום הולדת עברי לבן/בת משפחה בחיים והמשך לבנות את העץ הלאה"
+                  >
+                    <Cake className="w-4 h-4 text-emerald-600" />
+                    <span>הוסף יום הולדת עברי</span>
+                  </button>
+                )}
+
                 {/* Join / Merge Branch from Another Calendar Button */}
                 <button
                   onClick={() => {
@@ -1667,9 +1697,19 @@ export default function HomePage() {
                 {/* Quick Metrics & Actions */}
                 <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
                   <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
-                    <span className="text-2xl font-black text-white block">{deceased.length}</span>
+                    <span className="text-2xl font-black text-white block">{deceasedOnlyCount}</span>
                     <span className="text-[11px] text-slate-300 font-bold">נפטרים ביומן</span>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('birthdays')}
+                    className="flex-1 sm:flex-initial bg-emerald-500/15 hover:bg-emerald-500/25 transition backdrop-blur-md rounded-2xl p-4 border border-emerald-400/30 text-center min-w-[105px] cursor-pointer"
+                    title="לחץ לצפייה והוספת ימי הולדת עבריים של בני המשפחה החיים"
+                  >
+                    <span className="text-2xl font-black text-emerald-300 block">{livingCount}</span>
+                    <span className="text-[11px] text-emerald-100 font-bold">🎂 ימי הולדת</span>
+                  </button>
 
                   <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
                     <span className="text-2xl font-black text-amber-400 block">{branches.length}</span>
@@ -1842,7 +1882,22 @@ export default function HomePage() {
                   <List className="w-4 h-4" />
                   <span>רשימת אזכרות</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200/80 text-slate-700">
-                    {deceased.length}
+                    {deceasedOnlyCount}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewMode('birthdays')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition cursor-pointer shrink-0 ${
+                    viewMode === 'birthdays'
+                      ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-emerald-300'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Cake className="w-4 h-4 text-emerald-600" />
+                  <span>ימי הולדת עבריים (בחיים)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-extrabold">
+                    {livingCount}
                   </span>
                 </button>
 
@@ -1857,7 +1912,7 @@ export default function HomePage() {
                   <FolderTree className="w-4 h-4" />
                   <span>עץ המשפחה והדורות</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                    דורות 1-8
+                    כל הדורות ({deceased.length})
                   </span>
                 </button>
 
@@ -1908,7 +1963,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* View Mode Switching: List / Tree / Missing Rubric */}
+            {/* View Mode Switching: List / Birthdays / Tree / Missing Rubric */}
             {viewMode === 'list' && (
               <DeceasedList
                 deceased={deceased}
@@ -1917,6 +1972,28 @@ export default function HomePage() {
                 userGeneration={userGeneration}
                 onEdit={(person) => {
                   setEditingDeceased(person);
+                  setDefaultModalIsLiving(false);
+                  setIsAddModalOpen(true);
+                }}
+                onDelete={handleDeleteDeceased}
+                onOpenLineage={setLineagePerson}
+              />
+            )}
+
+            {viewMode === 'birthdays' && (
+              <HebrewBirthdaysView
+                deceased={deceased}
+                branches={branches}
+                isAdmin={canEdit}
+                userGeneration={userGeneration}
+                onAddLiving={() => {
+                  setEditingDeceased(null);
+                  setDefaultModalIsLiving(true);
+                  setIsAddModalOpen(true);
+                }}
+                onEdit={(person) => {
+                  setEditingDeceased(person);
+                  setDefaultModalIsLiving(true);
                   setIsAddModalOpen(true);
                 }}
                 onDelete={handleDeleteDeceased}
@@ -1932,10 +2009,12 @@ export default function HomePage() {
                 canEdit={canEdit}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
+                  setDefaultModalIsLiving(isPersonLiving(person));
                   setIsAddModalOpen(true);
                 }}
                 onAddDeceased={(initial) => {
                   setEditingDeceased(initial as any);
+                  setDefaultModalIsLiving(false);
                   setIsAddModalOpen(true);
                 }}
                 onOpenLineage={setLineagePerson}
@@ -1950,6 +2029,7 @@ export default function HomePage() {
                 canEdit={canEdit}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
+                  setDefaultModalIsLiving(isPersonLiving(person));
                   setIsAddModalOpen(true);
                 }}
                 onOpenLineage={setLineagePerson}
@@ -1982,11 +2062,14 @@ export default function HomePage() {
           onClose={() => {
             setIsAddModalOpen(false);
             setEditingDeceased(null);
+            setDefaultModalIsLiving(false);
           }}
           onSave={handleSaveDeceased}
           branches={currentCalendar ? branches : (sharedViewData?.branches || [])}
           initialData={editingDeceased}
           calendarId={(currentCalendar || sharedViewData?.calendar)!.id}
+          defaultIsLiving={defaultModalIsLiving}
+          allPeople={currentCalendar ? deceased : (sharedViewData?.deceased || [])}
         />
       )}
 

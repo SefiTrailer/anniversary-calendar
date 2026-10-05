@@ -20,6 +20,8 @@ export interface DeceasedRecord {
   leap_year_preference?: 'Adar II' | 'Adar I' | 'both';
   notes?: string;
   created_at?: string;
+  is_living?: boolean;
+  lineage_path?: any[];
 }
 
 export const HEBREW_MONTHS_TRANSLATION: Record<string, string> = {
@@ -280,6 +282,62 @@ export function formatAnniversaryYearText(yearsPassed: number): string {
   return `שנת ה-${yearsPassed} לפטירה`;
 }
 
+export function formatBirthdayYearText(age: number): string {
+  if (age <= 0) return 'שנת הלידה';
+  return `יום הולדת ${age} (שנת ה-${age})`;
+}
+
+/**
+ * Checks whether a person record represents a living family member (יום הולדת עברי)
+ * rather than a deceased family member (יארצייט).
+ */
+export function isPersonLiving(
+  person?: {
+    is_living?: boolean | null;
+    relationship?: string | null;
+    notes?: string | null;
+    title?: string | null;
+    lineage_path?: any[] | null;
+  } | null
+): boolean {
+  if (!person) return false;
+  if (person.is_living === true) return true;
+  const rel = (person.relationship || '').trim();
+  if (rel.includes('[בחיים]') || rel.startsWith('בחיים')) return true;
+  const notes = (person.notes || '').trim();
+  if (notes.includes('[בחיים]')) return true;
+  const title = (person.title || '').trim();
+  if (
+    title.includes('שליט״א') ||
+    title.includes('שליט"א') ||
+    title.includes('תחי׳') ||
+    title.includes("תחי'") ||
+    title.includes('ני״ו') ||
+    title.includes('ני"ו')
+  ) {
+    return true;
+  }
+  if (
+    Array.isArray(person.lineage_path) &&
+    person.lineage_path.some((s: any) => s && s.is_living === true)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Removes internal `[בחיים]` marker from display strings (relationship / notes).
+ */
+export function cleanLivingMarkerFromText(str?: string | null): string {
+  if (!str) return '';
+  return str
+    .replace(/\[בחיים\]/g, '')
+    .replace(/^[\s•,-]+|[\s•,-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Boundary-safe pattern for Hebrew honorifics (prevents matching 'זל' inside 'זלמן' or 'זליג')
 const SAFE_HONORIFIC_PATTERN = /(?<=^|[\s,;.(])(?:זצוקללה[״"׳']ה|זצוק[״"׳']ל|זצוקל|זצ[״"׳']ל|זצל|זי[״"׳']ע|זיע|הי[״"׳']ד|היד|ע[״"׳']ה|עה|נ[״"׳']ע|תנצב[״"׳']ה|ז[״"׳']ל|זל)(?=$|[\s,;.)])/g;
 
@@ -307,6 +365,7 @@ function cleanHonorificsFromString(str: string): string {
  * Extracts and cleans honorifics (זצ"ל, ז"ל, ע"ה, הי"ד, etc.) from deceased record.
  * Prevents duplications like "זצ"ל ז"ל" or "ע"ה ז"ל".
  * Appropriately defaults to "ע״ה" for women, "הי״ד" for martyrs, and "ז״ל" / "זצ״ל" for men.
+ * For living family members (isPersonLiving === true), NEVER appends deceased honorifics.
  */
 export function getDeceasedFormattedParts(person: {
   title?: string | null;
@@ -314,10 +373,14 @@ export function getDeceasedFormattedParts(person: {
   last_name: string;
   gender?: 'male' | 'female' | string;
   notes?: string | null;
+  relationship?: string | null;
+  is_living?: boolean | null;
+  lineage_path?: any[] | null;
 }): DeceasedFormattedParts {
   let cleanTitle = (person.title || '').trim();
   let cleanFirstName = (person.first_name || '').trim();
   let cleanLastName = (person.last_name || '').trim();
+  const living = isPersonLiving(person);
 
   // 1. Scan the whole name text for any existing honorifics
   const fullRaw = `${cleanTitle} ${cleanFirstName} ${cleanLastName}`;
@@ -326,16 +389,18 @@ export function getDeceasedFormattedParts(person: {
 
   // Determine highest/proper honorific
   let extractedHonorific = '';
-  if (unique.includes('הי״ד')) {
-    extractedHonorific = 'הי״ד';
-  } else if (unique.includes('זצוק״ל') || unique.includes('זצוקל') || unique.includes('זצוקללה״ה') || unique.includes('זצ״ל') || unique.includes('זצל')) {
-    extractedHonorific = 'זצ״ל';
-  } else if (unique.includes('זי״ע') || unique.includes('זיע')) {
-    extractedHonorific = 'זי״ע';
-  } else if (unique.includes('ע״ה') || unique.includes('עה') || unique.includes('נ״ע')) {
-    extractedHonorific = 'ע״ה';
-  } else if (unique.includes('ז״ל') || unique.includes('זל')) {
-    extractedHonorific = 'ז״ל';
+  if (!living) {
+    if (unique.includes('הי״ד')) {
+      extractedHonorific = 'הי״ד';
+    } else if (unique.includes('זצוק״ל') || unique.includes('זצוקל') || unique.includes('זצוקללה״ה') || unique.includes('זצ״ל') || unique.includes('זצל')) {
+      extractedHonorific = 'זצ״ל';
+    } else if (unique.includes('זי״ע') || unique.includes('זיע')) {
+      extractedHonorific = 'זי״ע';
+    } else if (unique.includes('ע״ה') || unique.includes('עה') || unique.includes('נ״ע')) {
+      extractedHonorific = 'ע״ה';
+    } else if (unique.includes('ז״ל') || unique.includes('זל')) {
+      extractedHonorific = 'ז״ל';
+    }
   }
 
   // 2. Strip ALL honorifics from title, first_name and last_name so they never appear twice
@@ -343,8 +408,8 @@ export function getDeceasedFormattedParts(person: {
   cleanLastName = cleanHonorificsFromString(cleanLastName);
   cleanTitle = cleanHonorificsFromString(cleanTitle);
 
-  // 3. If no honorific was present, choose appropriate default
-  if (!extractedHonorific) {
+  // 3. If no honorific was present, choose appropriate default (only for deceased!)
+  if (!living && !extractedHonorific) {
     const isMartyr =
       person.notes?.includes('הי"ד') ||
       person.notes?.includes('הי״ד') ||
@@ -422,6 +487,9 @@ export function formatLeiluyNishmat(person: {
   gender?: 'male' | 'female' | string;
   father_or_mother_name?: string | null;
   notes?: string | null;
+  relationship?: string | null;
+  is_living?: boolean | null;
+  lineage_path?: any[] | null;
 }): string {
   const parent = (person.father_or_mother_name || '').trim();
   if (!parent) return '';
@@ -448,6 +516,9 @@ export function getDeceasedFullName(person: {
   last_name: string;
   gender?: 'male' | 'female' | string;
   notes?: string | null;
+  relationship?: string | null;
+  is_living?: boolean | null;
+  lineage_path?: any[] | null;
 }): string {
   return getDeceasedFormattedParts(person).fullName;
 }
@@ -471,8 +542,8 @@ export interface GenerationRelationInfo {
 }
 
 /**
- * Returns detailed generation and relationship information connecting the deceased person to the current viewer/user.
- * Distinguishes between direct ancestors (אב/אם קדמוני ישיר) and collateral/non-direct relatives (דוד, דודה, אחות סבא, וכו').
+ * Returns detailed generation and relationship information connecting the person to the current viewer/user.
+ * Distinguishes between direct ancestors (אב/אם קדמוני ישיר), collateral relatives, and living descendants.
  * Adjusts generation dynamically based on userGeneration (root user Sefi = 1, children = 0, grandchildren = -1, parents = 2).
  */
 export function getGenerationRelationInfo(
@@ -484,18 +555,19 @@ export function getGenerationRelationInfo(
   userGeneration: number = 1
 ): GenerationRelationInfo {
   const baseGen =
-    person.generation ||
-    (Array.isArray(person.lineage_path) && person.lineage_path.length > 0
+    typeof person.generation === 'number' && !isNaN(person.generation)
+      ? person.generation
+      : Array.isArray(person.lineage_path) && person.lineage_path.length > 0
       ? person.lineage_path.length
-      : 2);
-  const rel = (person.relationship || '').trim();
+      : 2;
+  const rel = cleanLivingMarkerFromText(person.relationship);
 
   // Calculate relative generation:
   // Root user (Sefi) = 1 -> relGen = baseGen + (1 - 1) = baseGen
-  // Sefi's child = 0 -> relGen = baseGen + (1 - 0) = baseGen + 1 (descendant generation 6 of gen 5)
+  // Sefi's child = 0 -> relGen = baseGen + (1 - 0) = baseGen + 1
   // Sefi's father = 2 -> relGen = baseGen + (1 - 2) = baseGen - 1
   const effectiveUserGen = typeof userGeneration === 'number' && !isNaN(userGeneration) ? userGeneration : 1;
-  const relativeGeneration = Math.max(1, baseGen + (1 - effectiveUserGen));
+  const relativeGeneration = baseGen + (1 - effectiveUserGen);
 
   const nonDirectKeywords = [
     'דודה',
@@ -514,6 +586,8 @@ export function getGenerationRelationInfo(
     'קרובת משפחה',
     'בן דוד',
     'בת דוד',
+    'אחיין',
+    'אחיינית',
   ];
 
   let isDirect = true;
@@ -535,7 +609,15 @@ export function getGenerationRelationInfo(
   }
 
   let directType = 'אב/אם קדמוני';
-  if (baseGen === 2) {
+  if (baseGen <= -2) {
+    directType = 'נין/ה • דור רביעי';
+  } else if (baseGen === -1) {
+    directType = 'נכד/ה';
+  } else if (baseGen === 0) {
+    directType = 'בן/בת • דור ההמשך';
+  } else if (baseGen === 1) {
+    directType = 'בני הדור שלי (אחים / בני דודים)';
+  } else if (baseGen === 2) {
     directType =
       rel.includes('אם') || rel.includes('אמא')
         ? 'אם'
@@ -566,14 +648,27 @@ export function getGenerationRelationInfo(
 
   const relationDescription = rel || (isDirect ? directType : 'קשר משפחתי');
 
-  // Concise badge text as requested by user: 'רק כ'דור...''
-  const badgeText = isDirect
-    ? `דור ${relativeGeneration}`
-    : `דור ${relativeGeneration} • לא ישיר`;
+  let badgeText: string;
+  if (relativeGeneration === 1) {
+    badgeText = 'הדור שלי (דור 1)';
+  } else if (relativeGeneration === 0) {
+    badgeText = 'דור ההמשך (ילדים)';
+  } else if (relativeGeneration === -1) {
+    badgeText = 'דור הנכדים';
+  } else if (relativeGeneration <= -2) {
+    badgeText = 'דור הנינים';
+  } else {
+    badgeText = isDirect
+      ? `דור ${relativeGeneration}`
+      : `דור ${relativeGeneration} • לא ישיר`;
+  }
 
-  const fullDescription = isDirect
-    ? `אתה צאצא דור ${relativeGeneration} של דמות זו בקשר ישיר של אב/אם קדמוני (${relationDescription})`
-    : `דמות זו מקושרת לענף בדור ${relativeGeneration}, אך אינה קשר ישיר של אב/אם קדמוני (${relationDescription})`;
+  const fullDescription =
+    relativeGeneration <= 1
+      ? `בן/בת משפחה ב${badgeText} (${relationDescription})`
+      : isDirect
+      ? `אתה צאצא דור ${relativeGeneration} של דמות זו בקשר ישיר של אב/אם קדמוני (${relationDescription})`
+      : `דמות זו מקושרת לענף בדור ${relativeGeneration}, אך אינה קשר ישיר של אב/אם קדמוני (${relationDescription})`;
 
   return {
     generation: baseGen,
@@ -587,7 +682,7 @@ export function getGenerationRelationInfo(
 }
 
 /**
- * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit event.
+ * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit or Hebrew Birthday event.
  */
 export function getGoogleCalendarDirectAddUrl(
   person: DeceasedRecord & { lineage_path?: any[] },
@@ -595,8 +690,11 @@ export function getGoogleCalendarDirectAddUrl(
   branchName?: string,
   appOrigin?: string
 ): string {
+  const living = isPersonLiving(person);
   const fullDisplayName = getDeceasedFullName(person);
-  const title = `יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+  const title = living
+    ? `🎂 יום הולדת עברי: ${fullDisplayName} (${formatBirthdayYearText(upcoming.yearsPassed)})`
+    : `יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
   const originalDate = formatDisplayDateWithGregorian(
     person.hebrew_day,
     person.hebrew_month,
@@ -609,19 +707,33 @@ export function getGoogleCalendarDirectAddUrl(
 
   const lineageChain = formatLineageChainText(person.lineage_path);
   const lineageUrl = appOrigin && person.id ? `${appOrigin}?lineage=${person.id}` : '';
+  const cleanNotes = cleanLivingMarkerFromText(person.notes);
 
-  const details = [
-    `יום השנה לפטירת ${fullDisplayName}`,
-    relationLine,
-    `תאריך עברי מקורי: ${originalDate}`,
-    branchName ? `ענף משפחתי: ${branchName}` : '',
-    lineageChain ? `\n🔗 שרשרת היוחסין:\n${lineageChain}` : '',
-    lineageUrl ? `\nצפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}` : '',
-    person.notes ? `\nהערות ומנהגים: ${person.notes}` : '',
-    person.after_sunset ? 'הערה: הפטירה אירעה לאחר צאת הכוכבים / השקיעה.' : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const details = living
+    ? [
+        `🎂 יום הולדת עברי של ${fullDisplayName}`,
+        upcoming.yearsPassed > 0 ? `גיל: ${upcoming.yearsPassed} (${formatBirthdayYearText(upcoming.yearsPassed)})` : '',
+        relationLine,
+        `תאריך לידה עברי: ${originalDate}`,
+        branchName ? `ענף משפחתי: ${branchName}` : '',
+        lineageChain ? `\n🔗 שרשרת היוחסין בעץ המשפחה:\n${lineageChain}` : '',
+        lineageUrl ? `\nצפייה באילן המשפחתי:\n${lineageUrl}` : '',
+        cleanNotes ? `\nהערות: ${cleanNotes}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : [
+        `יום השנה לפטירת ${fullDisplayName}`,
+        relationLine,
+        `תאריך עברי מקורי: ${originalDate}`,
+        branchName ? `ענף משפחתי: ${branchName}` : '',
+        lineageChain ? `\n🔗 שרשרת היוחסין:\n${lineageChain}` : '',
+        lineageUrl ? `\nצפייה בשרשרת הייחוס המלאה באילן:\n${lineageUrl}` : '',
+        cleanNotes ? `\nהערות ומנהגים: ${cleanNotes}` : '',
+        person.after_sunset ? 'הערה: הפטירה אירעה לאחר צאת הכוכבים / השקיעה.' : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
 
   const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
   let startStr: string;
