@@ -39,6 +39,9 @@ export async function GET(
   const queryCalName = request.nextUrl.searchParams.get('calName');
 
   const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
+  if (rawSelected.includes('status:pending')) {
+    return new NextResponse('הבקשה להצטרף לענף ממתינה לאישור בעל היומן', { status: 403 });
+  }
 
   // Extract any stored maxGen:N, calName:..., or gen2:/gen3:/gen4: tokens from membership.selected_branch_ids
   const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
@@ -79,6 +82,22 @@ export async function GET(
 
     return true;
   });
+
+  // Also include any approved linked branches from other calendars into this user's unified calendar feed!
+  if (membership.user_email && !queryBranches) {
+    const { linkedBranches, linkedDeceased } = await DataStore.getLinkedDeceasedAndBranchesForCalendar(
+      calendar.id,
+      membership.user_email
+    );
+    for (const lb of linkedBranches) {
+      branchMap.set(lb.id, lb.name);
+    }
+    for (const ld of linkedDeceased) {
+      if (ld.hebrew_day && ld.hebrew_month && !filteredDeceased.some(existing => existing.id === ld.id)) {
+        filteredDeceased.push(ld);
+      }
+    }
+  }
 
   const customCalName = queryCalName || (storedCalNameToken ? storedCalNameToken.replace(/^calName:/, '') : '');
   const displayCalName = formatCalendarDisplayName(calendar.name, customCalName).normalize('NFKC');

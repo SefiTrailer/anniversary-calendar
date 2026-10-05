@@ -9,6 +9,11 @@ export async function GET(request: NextRequest) {
   const userEmail = searchParams.get('userEmail');
   const userName = searchParams.get('userName') || 'אורח';
 
+  if (searchParams.get('directory') === 'true') {
+    const directory = await DataStore.getPublicCalendarsDirectory();
+    return NextResponse.json({ directory });
+  }
+
   const isShare = searchParams.get('isShare') === 'true' || searchParams.get('shared') === 'true';
 
   // If this is a shared calendar view link (e.g. sent via WhatsApp / Web link)
@@ -41,6 +46,9 @@ export async function GET(request: NextRequest) {
         ? existing.role
         : invitedRole;
 
+      // Remove status:pending if they opened an explicit share link from the owner
+      const existingTags = (existing?.selected_branch_ids || []).filter(t => t !== 'status:pending');
+
       userMembership = {
         id: existing?.id || crypto.randomUUID(),
         calendar_id: calendarId,
@@ -48,7 +56,7 @@ export async function GET(request: NextRequest) {
         user_name: existing?.user_name || userName,
         role: effectiveRole as 'admin' | 'editor' | 'member',
         feed_token: existing?.feed_token || crypto.randomUUID(),
-        selected_branch_ids: existing?.selected_branch_ids?.length ? existing.selected_branch_ids : branchIds,
+        selected_branch_ids: existingTags.length ? existingTags : branchIds,
         user_generation: existing?.user_generation ?? 1,
       };
       await DataStore.saveMembership(userMembership);
@@ -104,8 +112,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
     }
 
-    const branches = await DataStore.getBranches(calendarId);
-    const deceased = await DataStore.getDeceased(calendarId);
+    const ownBranches = await DataStore.getBranches(calendarId);
+    const ownDeceased = await DataStore.getDeceased(calendarId);
 
     // Fetch or create membership ONLY for this requesting user
     let membership = await DataStore.getUserMembership(calendarId, userEmail);
@@ -118,9 +126,21 @@ export async function GET(request: NextRequest) {
         user_name: userName,
         role: isOwner ? 'admin' : 'member',
         feed_token: crypto.randomUUID(),
-        selected_branch_ids: branches.map(b => b.id),
+        selected_branch_ids: ownBranches.map(b => b.id),
       };
       await DataStore.saveMembership(membership);
+    }
+
+    // Also include any approved linked branches from other calendars into this user's unified calendar!
+    const { linkedBranches, linkedDeceased, linkedSources } =
+      await DataStore.getLinkedDeceasedAndBranchesForCalendar(calendarId, userEmail);
+
+    const combinedBranches = [...ownBranches, ...linkedBranches];
+    const combinedDeceased = [...ownDeceased];
+    for (const ld of linkedDeceased) {
+      if (!combinedDeceased.some(existing => existing.id === ld.id)) {
+        combinedDeceased.push(ld);
+      }
     }
 
     const members = (isOwner || membership.role === 'admin')
@@ -129,8 +149,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       calendar,
-      branches,
-      deceased,
+      branches: combinedBranches,
+      deceased: combinedDeceased,
+      linkedSources,
       membership,
       members,
       calendars: userCalendars,
@@ -147,7 +168,8 @@ async function canUserEditCalendar(calendarId: string, userEmail: string): Promi
   if (!cal) return false;
   if (cal.created_by_user_id.toLowerCase() === userEmail.toLowerCase()) return true;
   const m = await DataStore.getUserMembership(calendarId, userEmail);
-  return m?.role === 'admin' || m?.role === 'editor';
+  if (!m || (m.selected_branch_ids || []).includes('status:pending')) return false;
+  return m.role === 'admin' || m.role === 'editor';
 }
 
 async function isCalendarAdmin(calendarId: string, userEmail: string): Promise<boolean> {
@@ -156,7 +178,8 @@ async function isCalendarAdmin(calendarId: string, userEmail: string): Promise<b
   if (!cal) return false;
   if (cal.created_by_user_id.toLowerCase() === userEmail.toLowerCase()) return true;
   const m = await DataStore.getUserMembership(calendarId, userEmail);
-  return m?.role === 'admin';
+  if (!m || (m.selected_branch_ids || []).includes('status:pending')) return false;
+  return m.role === 'admin';
 }
 
 export async function POST(request: NextRequest) {
@@ -339,7 +362,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'manage_member': {
-        const { calendarId, targetEmail, targetName, role, selectedBranchIds } = payload;
+        const calendarId = payload.calendarId || payload.calendar_id;
+        const targetEmail = payload.targetEmail || payload.member_email;
+        const targetName = payload.targetName || payload.member_name;
+        const role = payload.role;
+        const selectedBranchIds = payload.selectedBranchIds || payload.selected_branch_ids;
+
         const isAdmin = await isCalendarAdmin(calendarId, userEmail);
         if (!isAdmin) {
           return NextResponse.json({ error: 'רק מנהל היומן יכול לעדכן הרשאות משתמשים' }, { status: 403 });
@@ -352,6 +380,25 @@ export async function POST(request: NextRequest) {
 
         const existing = await DataStore.getUserMembership(calendarId, cleanEmail);
         const allBranches = await DataStore.getBranches(calendarId);
+
+        // Preserve any linkedToCal:... token when admin approves/updates a member!
+        const existingLinkedToken = (existing?.selected_branch_ids || []).find(s =>
+          s.startsWith('linkedToCal:')
+        );
+        const baseBranches: string[] = (
+          selectedBranchIds ||
+          existing?.selected_branch_ids ||
+          allBranches.map(b => b.id)
+        ).filter(
+          (s: string) =>
+            s !== 'status:pending' &&
+            !s.startsWith('reqRole:') &&
+            !s.startsWith('reqNote:')
+        );
+        if (existingLinkedToken && !baseBranches.includes(existingLinkedToken)) {
+          baseBranches.push(existingLinkedToken);
+        }
+
         const memberRecord = {
           id: existing?.id || crypto.randomUUID(),
           calendar_id: calendarId,
@@ -359,7 +406,7 @@ export async function POST(request: NextRequest) {
           user_name: (targetName || existing?.user_name || cleanEmail.split('@')[0]).trim(),
           role: (role || 'member') as 'admin' | 'editor' | 'member',
           feed_token: existing?.feed_token || crypto.randomUUID(),
-          selected_branch_ids: selectedBranchIds || existing?.selected_branch_ids || allBranches.map(b => b.id),
+          selected_branch_ids: baseBranches,
           user_generation: existing?.user_generation ?? 1,
         };
 
@@ -369,14 +416,97 @@ export async function POST(request: NextRequest) {
       }
 
       case 'remove_member': {
-        const { calendarId, targetEmail } = payload;
+        const calendarId = payload.calendarId || payload.calendar_id;
+        const targetEmail = payload.targetEmail || payload.member_email;
         const isAdmin = await isCalendarAdmin(calendarId, userEmail);
-        if (!isAdmin) {
+        // Also allow the user themselves to cancel/unlink their own request or linked branch
+        const isSelf = (targetEmail || '').toLowerCase() === (userEmail || '').toLowerCase();
+        if (!isAdmin && !isSelf) {
           return NextResponse.json({ error: 'רק מנהל היומן יכול להסיר משתמשים' }, { status: 403 });
         }
         await DataStore.removeMembership(calendarId, targetEmail);
         const members = await DataStore.getCalendarMembers(calendarId);
         return NextResponse.json({ success: true, members });
+      }
+
+      case 'request_branch_join': {
+        const {
+          sourceCalendarId,
+          targetCalendarId,
+          requestedBranchIds = [],
+          requestedRole = 'member',
+          userName,
+          note = '',
+          autoApproveIfAlreadyMember = false,
+        } = payload;
+
+        const cleanEmail = (userEmail || '').trim().toLowerCase();
+        if (!cleanEmail || cleanEmail === 'guest@example.com') {
+          return NextResponse.json({ error: 'יש להתחבר לחשבון כדי לבקש הצטרפות לענף' }, { status: 401 });
+        }
+
+        const sourceCal = await DataStore.getCalendar(sourceCalendarId);
+        if (!sourceCal) {
+          return NextResponse.json({ error: 'היומן המבוקש לא נמצא' }, { status: 404 });
+        }
+
+        const existing = await DataStore.getUserMembership(sourceCalendarId, cleanEmail);
+        const isOwner = sourceCal.created_by_user_id.toLowerCase() === cleanEmail;
+        const wasAlreadyApproved =
+          isOwner ||
+          (existing && !(existing.selected_branch_ids || []).includes('status:pending'));
+
+        const shouldAutoApprove = isOwner || (wasAlreadyApproved && autoApproveIfAlreadyMember);
+
+        const allSourceBranches = await DataStore.getBranches(sourceCalendarId);
+        const branchTokens: string[] =
+          Array.isArray(requestedBranchIds) && requestedBranchIds.length > 0
+            ? requestedBranchIds.filter(
+                (t: string) =>
+                  !t.startsWith('status:') &&
+                  !t.startsWith('linkedToCal:') &&
+                  !t.startsWith('reqRole:') &&
+                  !t.startsWith('reqNote:')
+              )
+            : allSourceBranches.map(b => b.id);
+
+        if (targetCalendarId) {
+          branchTokens.push(`linkedToCal:${targetCalendarId}`);
+        } else {
+          branchTokens.push('linkedToCal:all');
+        }
+
+        if (!shouldAutoApprove) {
+          branchTokens.push('status:pending');
+          branchTokens.push(`reqRole:${requestedRole === 'editor' ? 'editor' : 'member'}`);
+          if (note && note.trim()) {
+            branchTokens.push(`reqNote:${note.trim().slice(0, 120)}`);
+          }
+        } else {
+          branchTokens.push('status:approved');
+        }
+
+        const memberRecord = {
+          id: existing?.id || crypto.randomUUID(),
+          calendar_id: sourceCalendarId,
+          user_email: cleanEmail,
+          user_name: (userName || existing?.user_name || cleanEmail.split('@')[0]).trim(),
+          role: (shouldAutoApprove
+            ? existing?.role || 'member'
+            : requestedRole === 'editor'
+            ? 'editor'
+            : 'member') as 'admin' | 'editor' | 'member',
+          feed_token: existing?.feed_token || crypto.randomUUID(),
+          selected_branch_ids: branchTokens,
+          user_generation: existing?.user_generation ?? 1,
+        };
+
+        await DataStore.saveMembership(memberRecord);
+        return NextResponse.json({
+          success: true,
+          membership: memberRecord,
+          status: shouldAutoApprove ? 'approved' : 'pending',
+        });
       }
 
       case 'bulk_import': {

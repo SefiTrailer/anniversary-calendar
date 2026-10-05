@@ -11,10 +11,17 @@ import { AuthModal } from '@/components/AuthModal';
 import { ShareCalendarModal } from '@/components/ShareCalendarModal';
 import { DeleteCalendarConfirmModal } from '@/components/DeleteCalendarConfirmModal';
 import { GemImportModal } from '@/components/GemImportModal';
+import { JoinBranchModal } from '@/components/JoinBranchModal';
 import { FamilyTreeView } from '@/components/FamilyTreeView';
 import { MissingDatesView } from '@/components/MissingDatesView';
 import LineageModal from '@/components/LineageModal';
-import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
+import {
+  CalendarProject,
+  FamilyBranch,
+  DeceasedPerson,
+  UserMembership,
+  LinkedBranchSource,
+} from '@/lib/types';
 import {
   calculateUpcomingYahrzeits,
   formatAnniversaryYearText,
@@ -53,6 +60,7 @@ import {
   ChevronDown,
   ChevronUp,
   Pencil,
+  Link2,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -70,6 +78,7 @@ export default function HomePage() {
   const [deceased, setDeceased] = useState<DeceasedPerson[]>([]);
   const [membership, setMembership] = useState<UserMembership | null>(null);
   const [calendarMembers, setCalendarMembers] = useState<UserMembership[]>([]);
+  const [linkedSources, setLinkedSources] = useState<LinkedBranchSource[]>([]);
   const [userGeneration, setUserGeneration] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ner_neshama_user_generation');
@@ -99,6 +108,12 @@ export default function HomePage() {
   const [calendarToDelete, setCalendarToDelete] = useState<CalendarProject | null>(null);
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
   const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
+  const [isJoinBranchModalOpen, setIsJoinBranchModalOpen] = useState(false);
+  const [joinModalPreselect, setJoinModalPreselect] = useState<{
+    calId?: string;
+    branchIds?: string[];
+    autoApprove?: boolean;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'tree' | 'missing'>('list');
   const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
@@ -310,6 +325,7 @@ export default function HomePage() {
         setBranches(data.branches || []);
         setDeceased(data.deceased || []);
         setCalendarMembers(data.members || []);
+        setLinkedSources(data.linkedSources || []);
         if (data.membership) {
           setMembership(data.membership);
           if (typeof data.membership.user_generation === 'number') {
@@ -338,6 +354,7 @@ export default function HomePage() {
       setDeceased([]);
       setMembership(null);
       setCalendarMembers([]);
+      setLinkedSources([]);
       setLoading(false);
     }
   }, [currentUser]);
@@ -354,6 +371,7 @@ export default function HomePage() {
     setDeceased([]);
     setMembership(null);
     setCalendarMembers([]);
+    setLinkedSources([]);
     loadUserCalendars();
   };
 
@@ -508,6 +526,23 @@ export default function HomePage() {
     if (res.ok && data.members) {
       setCalendarMembers(data.members);
     }
+  };
+
+  const handleUnlinkBranchSource = async (sourceCalendarId: string) => {
+    if (!currentUser || !currentCalendar) return;
+    await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'remove_member',
+        payload: {
+          calendar_id: sourceCalendarId,
+          member_email: currentUser.email,
+        },
+        userEmail: currentUser.email,
+      }),
+    });
+    await loadCalendarDetails(currentCalendar.id);
   };
 
   const handleAddBranch = async (name: string, color: string) => {
@@ -847,6 +882,27 @@ export default function HomePage() {
                     <span className="text-[11px] text-slate-300 font-bold">נפטרים בענף</span>
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentUser) {
+                        setIsAuthModalOpen(true);
+                        return;
+                      }
+                      setJoinModalPreselect({
+                        calId: sharedViewData.calendar.id,
+                        branchIds: sharedViewData.selectedBranchIds,
+                        autoApprove: true,
+                      });
+                      setIsJoinBranchModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 transition rounded-2xl px-4 py-4 text-center font-extrabold text-xs shadow-lg shadow-amber-500/20 cursor-pointer"
+                    title="צרף ואחד ענף זה לתוך היומן המשפחתי האישי שלך כדי שלא תצטרך מספר יומנים נפרדים"
+                  >
+                    <Link2 className="w-4 h-4" />
+                    <span>שלב ענף זה ביומן האישי שלי</span>
+                  </button>
+
                   <a
                     href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(
                       `${typeof window !== 'undefined' && window.location.origin.startsWith('https') ? 'webcal:' : 'http:'}//${
@@ -1134,13 +1190,24 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
                 onClick={() => setIsNewCalendarModalOpen(true)}
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-l from-blue-700 to-indigo-800 hover:from-blue-800 hover:to-indigo-900 text-white rounded-2xl font-bold text-sm shadow-xl shadow-blue-700/20 transition transform hover:scale-[1.02] active:scale-95 cursor-pointer"
               >
                 <Plus className="w-5 h-5" />
                 <span>צור יומן משפחתי ראשון</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setJoinModalPreselect(null);
+                  setIsJoinBranchModalOpen(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-2xl font-bold text-sm shadow-xs transition cursor-pointer"
+              >
+                <Link2 className="w-4 h-4 text-indigo-600" />
+                <span>בקש להצטרף לענף ביומן קיים</span>
               </button>
             </div>
           </div>
@@ -1158,17 +1225,31 @@ export default function HomePage() {
                   מרכז היומנים המשפחתיים שלי
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-300 font-medium">
-                  שלום {currentUser.name}, בחר יומן משפחתי לצפייה ולניהול, שתף ענפים ספציפיים או פתח יומן חדש:
+                  שלום {currentUser.name}, בחר יומן משפחתי לצפייה ולניהול, שתף ענפים ספציפיים או צרף ענף מיומן של קרוב משפחה:
                 </p>
               </div>
 
-              <button
-                onClick={() => setIsNewCalendarModalOpen(true)}
-                className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>צור יומן חדש</span>
-              </button>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  onClick={() => {
+                    setJoinModalPreselect(null);
+                    setIsJoinBranchModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-3 bg-white/10 hover:bg-white/20 text-amber-300 border border-amber-400/30 rounded-2xl font-bold text-xs transition shrink-0 cursor-pointer"
+                  title="בקש להצטרף לענף מיומן של קרוב משפחה ושלב אותו בתוך היומן שלך"
+                >
+                  <Link2 className="w-4 h-4" />
+                  <span>צרף ענף מיומן משפחתי אחר</span>
+                </button>
+
+                <button
+                  onClick={() => setIsNewCalendarModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>צור יומן חדש</span>
+                </button>
+              </div>
             </div>
 
             {/* Calendars Grid */}
@@ -1289,7 +1370,20 @@ export default function HomePage() {
                 <span>חזרה לכל היומנים שלי</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Join / Merge Branch from Another Calendar Button */}
+                <button
+                  onClick={() => {
+                    setJoinModalPreselect(null);
+                    setIsJoinBranchModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                  title="בקש להצטרף לענף מיומן של קרוב משפחה רחוק ושלב אותו בתוך היומן הנוכחי שלך"
+                >
+                  <Link2 className="w-4 h-4 text-blue-600" />
+                  <span>צרף ענף מיומן אחר</span>
+                </button>
+
                 {/* Smart GEM Import Button (Admin Only) */}
                 {isAdmin && (
                   <button
@@ -1327,6 +1421,162 @@ export default function HomePage() {
                 )}
               </div>
             </div>
+
+            {/* Admin Notification Banner: Pending Branch Join Requests */}
+            {isAdmin &&
+              calendarMembers.some((m) => (m.selected_branch_ids || []).includes('status:pending')) && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
+                      <BellRing className="w-5 h-5 text-amber-600 animate-bounce shrink-0" />
+                      <span>
+                        בקשות הצטרפות לענפים ביומן שלך הממתינות לאישור (
+                        {
+                          calendarMembers.filter((m) =>
+                            (m.selected_branch_ids || []).includes('status:pending')
+                          ).length
+                        }
+                        )
+                      </span>
+                    </div>
+                    <span className="text-xs text-amber-800 font-semibold">
+                      לאחר אישורך, הענף יתווסף ויתעדכן אוטומטית ביומן של המבקש
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {calendarMembers
+                      .filter((m) => (m.selected_branch_ids || []).includes('status:pending'))
+                      .map((m) => {
+                        const tags = m.selected_branch_ids || [];
+                        const noteTag = tags.find((t) => t.startsWith('reqNote:'));
+                        const noteText = noteTag ? noteTag.replace('reqNote:', '') : '';
+                        const reqRoleTag = tags.find((t) => t.startsWith('reqRole:'));
+                        const reqRole =
+                          reqRoleTag?.replace('reqRole:', '') === 'editor' ? 'editor' : 'member';
+                        const subBranchTag = tags.find(
+                          (t) =>
+                            t.startsWith('gen2:') || t.startsWith('gen3:') || t.startsWith('gen4:')
+                        );
+                        const subBranchName = subBranchTag ? subBranchTag.split(':').pop() : null;
+                        const requestedBranchNames = branches
+                          .filter((b) => tags.includes(b.id))
+                          .map((b) => b.name);
+
+                        return (
+                          <div
+                            key={m.id || m.user_email}
+                            className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs flex flex-col justify-between gap-3 text-xs"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-slate-900 text-sm">
+                                  {m.user_name} ({m.user_email})
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">
+                                  ביקש: {reqRole === 'editor' ? 'הרשאת עריכה' : 'צפייה בלבד'}
+                                </span>
+                              </div>
+                              <p className="text-indigo-800 font-bold">
+                                ענף מבוקש:{' '}
+                                {requestedBranchNames.length > 0
+                                  ? requestedBranchNames.join(' • ')
+                                  : 'כל הענפים'}
+                                {subBranchName ? ` (תת-ענף: ${subBranchName})` : ''}
+                              </p>
+                              {noteText && (
+                                <p className="text-slate-600 italic bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
+                                  ״{noteText}״
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleManageMember(
+                                    m.user_email,
+                                    m.user_name,
+                                    'member',
+                                    tags.filter((t) => t !== 'status:pending')
+                                  )
+                                }
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer"
+                              >
+                                ✓ אשר (צפייה)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleManageMember(
+                                    m.user_email,
+                                    m.user_name,
+                                    'editor',
+                                    tags.filter((t) => t !== 'status:pending')
+                                  )
+                                }
+                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition cursor-pointer"
+                              >
+                                ✏️ אשר (עם עריכה)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMember(m.user_email)}
+                                className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition cursor-pointer"
+                              >
+                                דחה בקשה
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+            {/* Linked Branches from Other Family Calendars Summary Bar */}
+            {linkedSources.length > 0 && (
+              <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                    <Link2 className="w-4 h-4 text-indigo-600" />
+                    <span>ענפים משולבים מיומנים משפחתיים אחרים:</span>
+                  </span>
+                  {linkedSources.map((ls) => (
+                    <span
+                      key={ls.membership_id || ls.source_calendar_id}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl font-bold border ${
+                        ls.status === 'approved'
+                          ? 'bg-white text-indigo-900 border-indigo-200'
+                          : 'bg-amber-50 text-amber-900 border-amber-300'
+                      }`}
+                    >
+                      <span>
+                        {formatCalendarDisplayName(ls.source_calendar_name)} (בעל היומן: {ls.source_owner_name})
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                          ls.status === 'approved'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-200/80 text-amber-950'
+                        }`}
+                      >
+                        {ls.status === 'approved' ? 'מאוחד ומסונכרן ✓' : 'ממתין לאישור ⏳'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleUnlinkBranchSource(ls.source_calendar_id)}
+                        className="text-slate-400 hover:text-red-600 mr-1 cursor-pointer"
+                        title="נתק ענף זה מהיומן שלך"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Dignified Calendar Hero Section */}
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-9 text-white shadow-xl relative overflow-hidden border border-slate-800/80">
@@ -1805,6 +2055,27 @@ export default function HomePage() {
         onClose={() => setIsNewCalendarModalOpen(false)}
         onCreateCalendar={handleCreateCalendar}
         currentUserName={currentUser?.name || 'משתמש'}
+      />
+
+      <JoinBranchModal
+        isOpen={isJoinBranchModalOpen}
+        onClose={() => {
+          setIsJoinBranchModalOpen(false);
+          setJoinModalPreselect(null);
+        }}
+        currentUser={currentUser}
+        userCalendars={calendars}
+        activeCalendarId={currentCalendar?.id}
+        preselectedSourceCalendarId={joinModalPreselect?.calId}
+        preselectedBranchIds={joinModalPreselect?.branchIds}
+        autoApproveIfAlreadyMember={Boolean(joinModalPreselect?.autoApprove)}
+        onSuccess={async () => {
+          if (currentCalendar) {
+            await loadCalendarDetails(currentCalendar.id);
+          } else {
+            await loadUserCalendars();
+          }
+        }}
       />
 
       <LineageModal

@@ -15,6 +15,20 @@ export interface FamilyBranch {
   name: string;
   color: string;
   created_at: string;
+  is_linked?: boolean;
+  source_calendar_id?: string;
+  source_calendar_name?: string;
+}
+
+export interface LinkedBranchSource {
+  membership_id: string;
+  source_calendar_id: string;
+  source_calendar_name: string;
+  source_owner_name: string;
+  status: 'pending' | 'approved';
+  role: 'admin' | 'editor' | 'member';
+  selected_branch_ids: string[];
+  target_calendar_id?: string;
 }
 
 export interface DeceasedPerson {

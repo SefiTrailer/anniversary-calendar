@@ -606,72 +606,184 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 )}
               </form>
 
-              {/* Current Members List */}
+              {/* Current Members & Pending Branch Requests List */}
               {members.length > 0 && (
-                <div className="space-y-2">
-                  <span className="block text-[11px] font-bold text-slate-600">
-                    משתמשים רשומים ביומן ({members.length}):
-                  </span>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {members.map((m) => {
-                      const isOwnerMember = m.user_email === calendar.created_by_user_id || m.role === 'admin';
-                      return (
-                        <div
-                          key={m.id || m.user_email}
-                          className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-slate-200 text-xs"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <span className="font-bold text-slate-900 block truncate">
-                              {m.user_name}
-                            </span>
-                            <span className="text-[10px] text-slate-500 block truncate">
-                              {m.user_email}
-                            </span>
-                          </div>
+                <div className="space-y-3">
+                  {/* Pending Requests Section */}
+                  {members.some((m) => (m.selected_branch_ids || []).includes('status:pending')) && (
+                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-2.5">
+                      <span className="block text-xs font-extrabold text-amber-950">
+                        🔔 בקשות הצטרפות לענף הממתינות לאישורך:
+                      </span>
+                      <div className="space-y-2">
+                        {members
+                          .filter((m) => (m.selected_branch_ids || []).includes('status:pending'))
+                          .map((m) => {
+                            const tags = m.selected_branch_ids || [];
+                            const noteTag = tags.find((t) => t.startsWith('reqNote:'));
+                            const noteText = noteTag ? noteTag.replace('reqNote:', '') : '';
+                            const reqRoleTag = tags.find((t) => t.startsWith('reqRole:'));
+                            const reqRole =
+                              reqRoleTag?.replace('reqRole:', '') === 'editor' ? 'editor' : 'member';
+                            const subBranchTag = tags.find(
+                              (t) => t.startsWith('gen2:') || t.startsWith('gen3:') || t.startsWith('gen4:')
+                            );
+                            const subBranchLabel = subBranchTag
+                              ? branchHierarchy.allNodesById[subBranchTag]?.label ||
+                                subBranchTag.split(':').pop()
+                              : null;
+                            const requestedBranchNames = branches
+                              .filter((b) => tags.includes(b.id))
+                              .map((b) => b.name);
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {isOwnerMember ? (
-                              <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                                מנהל ראשי
-                              </span>
-                            ) : (
-                              <>
-                                <select
-                                  value={m.role}
-                                  onChange={(e) =>
-                                    onManageMember(
-                                      m.user_email,
-                                      m.user_name,
-                                      e.target.value as 'member' | 'editor',
-                                      m.selected_branch_ids || selectedBranchIds
-                                    )
-                                  }
-                                  className={`text-[11px] font-bold rounded-lg px-2 py-1 border cursor-pointer outline-none ${
-                                    m.role === 'editor'
-                                      ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                      : 'bg-slate-50 text-slate-700 border-slate-200'
-                                  }`}
-                                >
-                                  <option value="editor">✏️ עריכה</option>
-                                  <option value="member">👁️ צפייה בלבד</option>
-                                </select>
+                            return (
+                              <div
+                                key={m.id || m.user_email}
+                                className="p-3 rounded-xl bg-white border border-amber-200 space-y-2 text-xs shadow-2xs"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <span className="font-bold text-slate-900 block">
+                                      {m.user_name} ({m.user_email})
+                                    </span>
+                                    <span className="text-[11px] text-indigo-800 font-semibold block mt-0.5">
+                                      מבקש להצטרף ל:{' '}
+                                      {requestedBranchNames.length > 0
+                                        ? requestedBranchNames.join(' • ')
+                                        : 'כל הענפים'}
+                                      {subBranchLabel ? ` (${subBranchLabel})` : ''}
+                                    </span>
+                                    {noteText && (
+                                      <span className="text-[11px] text-slate-600 italic block mt-0.5">
+                                        ״{noteText}״
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold shrink-0">
+                                    ביקש: {reqRole === 'editor' ? 'עריכה' : 'צפייה'}
+                                  </span>
+                                </div>
 
-                                {onRemoveMember && (
+                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
                                   <button
                                     type="button"
-                                    onClick={() => onRemoveMember(m.user_email)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                                    title="הסר משתמש מהיומן"
+                                    onClick={() =>
+                                      onManageMember(
+                                        m.user_email,
+                                        m.user_name,
+                                        'member',
+                                        tags.filter((t) => t !== 'status:pending')
+                                      )
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    ✓ אשר (צפייה בלבד)
                                   </button>
-                                )}
-                              </>
-                            )}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onManageMember(
+                                        m.user_email,
+                                        m.user_name,
+                                        'editor',
+                                        tags.filter((t) => t !== 'status:pending')
+                                      )
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition cursor-pointer"
+                                  >
+                                    ✏️ אשר (עם עריכה)
+                                  </button>
+                                  {onRemoveMember && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onRemoveMember(m.user_email)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] transition cursor-pointer"
+                                    >
+                                      דחה
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
+                  <span className="block text-[11px] font-bold text-slate-600">
+                    משתמשים מאושרים ביומן (
+                    {members.filter((m) => !(m.selected_branch_ids || []).includes('status:pending')).length}
+                    ):
+                  </span>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {members
+                      .filter((m) => !(m.selected_branch_ids || []).includes('status:pending'))
+                      .map((m) => {
+                        const isOwnerMember =
+                          m.user_email === calendar.created_by_user_id || m.role === 'admin';
+                        const memberBranches = branches
+                          .filter((b) => (m.selected_branch_ids || []).includes(b.id))
+                          .map((b) => b.name);
+                        return (
+                          <div
+                            key={m.id || m.user_email}
+                            className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-slate-200 text-xs"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-slate-900 block truncate">
+                                {m.user_name}
+                              </span>
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {m.user_email}
+                                {memberBranches.length > 0 && memberBranches.length < branches.length
+                                  ? ` • ענפים: ${memberBranches.join(', ')}`
+                                  : ''}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isOwnerMember ? (
+                                <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                  מנהל ראשי
+                                </span>
+                              ) : (
+                                <>
+                                  <select
+                                    value={m.role}
+                                    onChange={(e) =>
+                                      onManageMember(
+                                        m.user_email,
+                                        m.user_name,
+                                        e.target.value as 'member' | 'editor',
+                                        m.selected_branch_ids || selectedBranchIds
+                                      )
+                                    }
+                                    className={`text-[11px] font-bold rounded-lg px-2 py-1 border cursor-pointer outline-none ${
+                                      m.role === 'editor'
+                                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    <option value="editor">✏️ עריכה</option>
+                                    <option value="member">👁️ צפייה בלבד</option>
+                                  </select>
+
+                                  {onRemoveMember && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onRemoveMember(m.user_email)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                      title="הסר משתמש מהיומן"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 </div>
               )}
