@@ -1598,7 +1598,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <button
                 onClick={handleBackToHub}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/80 shadow-xs transition cursor-pointer"
+                className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-blue-700 bg-white hover:bg-slate-50 px-3.5 rounded-xl border border-slate-200/90 shadow-xs transition cursor-pointer whitespace-nowrap"
               >
                 <ArrowRight className="w-4 h-4" />
                 <span>חזרה לכל היומנים שלי</span>
@@ -1613,11 +1613,11 @@ export default function HomePage() {
                       setDefaultModalIsLiving(true);
                       setIsAddModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
-                    title="הוסף יום הולדת עברי לבן/בת משפחה בחיים והמשך לבנות את העץ הלאה"
+                    className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3.5 rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
+                    title="הוסף יום הולדת עברי או יום נישואין לבן/בת משפחה בחיים והמשך לבנות את העץ הלאה"
                   >
-                    <Cake className="w-4 h-4 text-emerald-600" />
-                    <span>הוסף יום הולדת עברי</span>
+                    <Cake className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>הוסף יום הולדת / שמחה</span>
                   </button>
                 )}
 
@@ -1627,10 +1627,10 @@ export default function HomePage() {
                     setJoinModalPreselect(null);
                     setIsJoinBranchModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                  className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3.5 rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
                   title="בקש להצטרף לענף מיומן של קרוב משפחה רחוק ושלב אותו בתוך היומן הנוכחי שלך"
                 >
-                  <Link2 className="w-4 h-4 text-blue-600" />
+                  <Link2 className="w-4 h-4 text-blue-600 shrink-0" />
                   <span>צרף ענף מיומן אחר</span>
                 </button>
 
@@ -1640,10 +1640,10 @@ export default function HomePage() {
                     setShareModalInitialTab('members');
                     setIsShareModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                  className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 px-3.5 rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
                   title="צפה בכל החברים שהצטרפו ליומן שלך ובבקשות הצטרפות הממתינות לאישור"
                 >
-                  <Users className="w-4 h-4 text-indigo-600" />
+                  <Users className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span>חברים ובקשות ({calendarMembers.length})</span>
                   {calendarMembers.some((m) => (m.selected_branch_ids || []).includes('status:pending')) && (
                     <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
@@ -1661,10 +1661,10 @@ export default function HomePage() {
                 {isAdmin && (
                   <button
                     onClick={() => setIsGemImportModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                    className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 px-3.5 rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
                     title="ייבוא חכם של נפטרים וענפים מ-GEM או מ-JSON"
                   >
-                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>ייבוא חכם (GEM)</span>
                   </button>
                 )}
@@ -1675,9 +1675,9 @@ export default function HomePage() {
                     setShareModalInitialTab('share');
                     setIsShareModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
+                  className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
                 >
-                  <Share2 className="w-4 h-4" />
+                  <Share2 className="w-4 h-4 shrink-0" />
                   <span>שתף יומן (לפי ענפים)</span>
                 </button>
 
@@ -1688,10 +1688,10 @@ export default function HomePage() {
                       setCalendarToDelete(currentCalendar);
                       setIsDeleteModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-2 rounded-xl transition cursor-pointer"
+                    className="h-9 inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 rounded-xl transition cursor-pointer whitespace-nowrap"
                     title="מחק יומן זה לצמיתות"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4 shrink-0" />
                     <span className="hidden sm:inline">מחק יומן</span>
                   </button>
                 )}
@@ -1854,17 +1854,17 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Dignified Calendar Hero Section */}
-            <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-9 text-white shadow-xl relative overflow-hidden border border-slate-800/80">
+            {/* Dignified Calendar Hero Section - Uniform Height & Symmetrical Alignment */}
+            <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl px-6 py-5 sm:px-8 sm:py-6 text-white shadow-xl relative overflow-hidden border border-slate-800/80">
               <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
-              <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-                <div className="space-y-3 max-w-2xl w-full">
+              <div className="relative z-10 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-5">
+                <div className="flex flex-col justify-center min-h-[78px] max-w-2xl w-full">
                   {!isEditingCalendarInfo ? (
-                    <>
+                    <div className="space-y-1.5">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight font-serif text-slate-50">
+                        <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight font-serif text-slate-50">
                           {formatCalendarDisplayName(currentCalendar.name, savedCustomCalName)}
                         </h2>
                         {isAdmin && (
@@ -1874,25 +1874,25 @@ export default function HomePage() {
                               setEditCalendarName(formatCalendarDisplayName(currentCalendar.name));
                               setEditCalendarDescription(
                                 currentCalendar.description ||
-                                  `לוח ימי פטירה (יארצייט) מתעדכן אוטומטית | בעל היומן: ${
+                                  `לוח שנה משפחתי מתעדכן אוטומטית | בעל היומן: ${
                                     currentCalendar.created_by_user_name || currentUser.name
                                   }`
                               );
                               setIsEditingCalendarInfo(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold border border-white/15 transition cursor-pointer"
+                            className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold border border-white/15 transition cursor-pointer whitespace-nowrap"
                             title="הגדר או שנה את שם היומן ותיאורו"
                           >
-                            <Pencil className="w-3.5 h-3.5 text-amber-400" />
+                            <Pencil className="w-3 h-3 text-amber-400 shrink-0" />
                             <span>הגדר שם יומן</span>
                           </button>
                         )}
                       </div>
 
-                      <p className="text-slate-300 text-xs sm:text-sm leading-relaxed font-medium">
+                      <p className="text-slate-300 text-xs sm:text-sm leading-snug font-medium">
                         {formatCalendarDescription(currentCalendar, currentUser.name)}
                       </p>
-                    </>
+                    </div>
                   ) : (
                     <form onSubmit={handleUpdateCalendar} className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 space-y-3">
                       <div>
@@ -1940,27 +1940,37 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Quick Metrics & Actions */}
-                <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
-                  <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
-                    <span className="text-2xl font-black text-white block">{deceasedOnlyCount}</span>
-                    <span className="text-[11px] text-slate-300 font-bold">נפטרים ביומן</span>
-                  </div>
+                {/* Quick Metrics & Actions - Strictly Identical Height (h-[78px]) & Single-Line Labels */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:items-stretch gap-2.5 w-full xl:w-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    className="h-[78px] min-w-[108px] px-3.5 bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl border border-white/10 flex flex-col items-center justify-center text-center cursor-pointer"
+                    title="צפה ברשימת ימי הזיכרון (יארצייט)"
+                  >
+                    <span className="text-2xl font-black text-white leading-none">{deceasedOnlyCount}</span>
+                    <span className="text-[11px] text-slate-300 font-bold mt-1.5 whitespace-nowrap">🕯️ נפטרים ביומן</span>
+                  </button>
 
                   <button
                     type="button"
                     onClick={() => setViewMode('birthdays')}
-                    className="flex-1 sm:flex-initial bg-emerald-500/15 hover:bg-emerald-500/25 transition backdrop-blur-md rounded-2xl p-4 border border-emerald-400/30 text-center min-w-[105px] cursor-pointer"
+                    className="h-[78px] min-w-[116px] px-3.5 bg-emerald-500/15 hover:bg-emerald-500/25 transition backdrop-blur-md rounded-2xl border border-emerald-400/30 flex flex-col items-center justify-center text-center cursor-pointer"
                     title="לחץ לצפייה והוספת ימי הולדת עבריים, ימי נישואין ושמחות משפחתיות"
                   >
-                    <span className="text-2xl font-black text-emerald-300 block">{livingCount}</span>
-                    <span className="text-[11px] text-emerald-100 font-bold">🎂💍 שמחות וימי הולדת</span>
+                    <span className="text-2xl font-black text-emerald-300 leading-none">{livingCount}</span>
+                    <span className="text-[11px] text-emerald-100 font-bold mt-1.5 whitespace-nowrap">🎂 שמחות ולידות</span>
                   </button>
 
-                  <div className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center min-w-[105px]">
-                    <span className="text-2xl font-black text-amber-400 block">{branches.length}</span>
-                    <span className="text-[11px] text-slate-300 font-bold">ענפי משפחה</span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('tree')}
+                    className="h-[78px] min-w-[104px] px-3.5 bg-white/5 hover:bg-white/10 transition backdrop-blur-md rounded-2xl border border-white/10 flex flex-col items-center justify-center text-center cursor-pointer"
+                    title="צפה בעץ המשפחה והענפים"
+                  >
+                    <span className="text-2xl font-black text-amber-400 leading-none">{branches.length}</span>
+                    <span className="text-[11px] text-slate-300 font-bold mt-1.5 whitespace-nowrap">🌳 ענפי משפחה</span>
+                  </button>
 
                   <button
                     type="button"
@@ -1968,33 +1978,35 @@ export default function HomePage() {
                       setShareModalInitialTab('members');
                       setIsShareModalOpen(true);
                     }}
-                    className="flex-1 sm:flex-initial bg-indigo-500/15 hover:bg-indigo-500/25 transition backdrop-blur-md rounded-2xl p-4 border border-indigo-400/30 text-center min-w-[105px] cursor-pointer relative"
+                    className="h-[78px] min-w-[112px] px-3.5 bg-indigo-500/15 hover:bg-indigo-500/25 transition backdrop-blur-md rounded-2xl border border-indigo-400/30 flex flex-col items-center justify-center text-center cursor-pointer relative"
                     title="לחץ לצפייה בחברים שהצטרפו ליומן ובבקשות הצטרפות"
                   >
-                    <span className="text-2xl font-black text-indigo-200 block">{calendarMembers.length}</span>
-                    <span className="text-[11px] text-indigo-100 font-bold">👥 חברים ובקשות</span>
+                    <span className="text-2xl font-black text-indigo-200 leading-none">{calendarMembers.length}</span>
+                    <span className="text-[11px] text-indigo-100 font-bold mt-1.5 whitespace-nowrap">👥 חברים ובקשות</span>
                   </button>
 
                   {missingDatesCount > 0 && (
                     <button
+                      type="button"
                       onClick={() => setViewMode('missing')}
-                      className="flex-1 sm:flex-initial bg-amber-500/20 hover:bg-amber-500/30 transition backdrop-blur-md rounded-2xl p-4 border border-amber-400/40 text-center min-w-[105px] cursor-pointer"
+                      className="h-[78px] min-w-[104px] px-3.5 bg-amber-500/20 hover:bg-amber-500/30 transition backdrop-blur-md rounded-2xl border border-amber-400/40 flex flex-col items-center justify-center text-center cursor-pointer"
                       title="לחץ לצפייה בדמויות ברובריקת ללא תאריך"
                     >
-                      <span className="text-2xl font-black text-amber-300 block">{missingDatesCount}</span>
-                      <span className="text-[11px] text-amber-200 font-bold">ללא תאריך</span>
+                      <span className="text-2xl font-black text-amber-300 leading-none">{missingDatesCount}</span>
+                      <span className="text-[11px] text-amber-200 font-bold mt-1.5 whitespace-nowrap">⚠️ ללא תאריך</span>
                     </button>
                   )}
 
                   <button
+                    type="button"
                     onClick={() => {
                       setShareModalInitialTab('share');
                       setIsShareModalOpen(true);
                     }}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition rounded-2xl px-5 py-4 text-center font-extrabold text-xs shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
+                    className="h-[78px] min-w-[108px] px-4 col-span-2 sm:col-span-1 flex flex-col items-center justify-center bg-gradient-to-b from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 transition rounded-2xl text-center font-extrabold shadow-lg shadow-indigo-600/30 active:scale-95 cursor-pointer"
                   >
-                    <Share2 className="w-4 h-4" />
-                    <span>שתף יומן זה</span>
+                    <Share2 className="w-5 h-5 text-white shrink-0" />
+                    <span className="text-[11px] text-white font-extrabold mt-1.5 whitespace-nowrap">שתף יומן זה</span>
                   </button>
                 </div>
               </div>
@@ -2005,7 +2017,7 @@ export default function HomePage() {
               <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/60 border border-amber-300/80 rounded-3xl overflow-hidden shadow-sm">
                 <div
                   onClick={() => setIsUpcomingOpen((prev) => !prev)}
-                  className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6 cursor-pointer hover:bg-amber-100/40 transition select-none"
+                  className="flex items-center justify-between gap-3 px-5 py-3.5 sm:px-6 cursor-pointer hover:bg-amber-100/40 transition select-none"
                 >
                   <div className="flex items-center gap-2 text-amber-950 font-black text-sm sm:text-base">
                     <BellRing className="w-5 h-5 text-amber-600 animate-bounce shrink-0" />
@@ -2037,7 +2049,7 @@ export default function HomePage() {
                 </div>
 
                 {isUpcomingOpen && (
-                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-1 border-t border-amber-200/60">
+                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-3 border-t border-amber-200/60">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
                       {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
                         const genInfo = getGenerationRelationInfo(person, userGeneration);
@@ -2046,67 +2058,68 @@ export default function HomePage() {
                           <div
                             key={person.id}
                             onClick={() => setLineagePerson(person)}
-                            className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-3 hover:shadow-sm transition cursor-pointer hover:border-amber-400 h-full"
+                            className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-2.5 hover:shadow-md transition cursor-pointer hover:border-amber-400 h-full min-h-[192px]"
                             title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                           >
-                            <div className="flex flex-col flex-1 justify-between gap-2">
+                            {/* Top Section: Name, Badges & Leiluy Nishmat */}
+                            <div className="space-y-1.5">
                               <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-lg font-black text-slate-900 leading-tight font-serif">
-                                      {getDeceasedFullName(person)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setLineagePerson(person);
-                                      }}
-                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs font-serif transition cursor-pointer ${
-                                        genInfo.isDirect
-                                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                                          : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
-                                      }`}
-                                      title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
-                                    >
-                                      <GitCommit className={`w-3.5 h-3.5 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
-                                      <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
-                                    </button>
-                                  </div>
-                                  {person.father_or_mother_name && (
-                                    <span className="text-[11px] text-slate-600 font-semibold block mt-1 font-serif">
-                                      לעילוי נשמת: {formatLeiluyNishmat(person)}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 shrink-0">
+                                <span className="text-base sm:text-lg font-black text-slate-900 leading-snug font-serif line-clamp-1">
+                                  {getDeceasedFullName(person)}
+                                </span>
+                                <span className="text-[11px] font-black px-2.5 py-0.5 rounded-xl bg-amber-100 text-amber-900 shrink-0 whitespace-nowrap">
                                   {diffDays === 0 ? 'היום!' : diffDays === 1 ? 'מחר!' : `בעוד ${diffDays} ימים`}
                                 </span>
                               </div>
 
-                              <div className="flex items-center justify-between pt-2 mt-auto border-t border-amber-100/70">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-bold text-amber-900 block font-serif">
-                                    {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLineagePerson(person);
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold shadow-2xs font-serif transition cursor-pointer whitespace-nowrap ${
+                                    genInfo.isDirect
+                                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                                      : 'bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300'
+                                  }`}
+                                  title={`${genInfo.fullDescription} • לחץ לצפייה בשושלת`}
+                                >
+                                  <GitCommit className={`w-3 h-3 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
+                                  <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
+                                </button>
+                                {person.father_or_mother_name && (
+                                  <span className="text-[11px] text-slate-600 font-semibold font-serif truncate max-w-[220px]">
+                                    לעילוי נשמת: {formatLeiluyNishmat(person)}
                                   </span>
-                                  <span className="text-[11px] text-slate-500 font-sans">
-                                    ({new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
-                                      day: 'numeric',
-                                      month: 'numeric',
-                                      year: 'numeric',
-                                    })})
-                                  </span>
-                                  {zm && (
-                                    <span className="text-[11px] font-semibold text-amber-800 mt-0.5 flex items-center gap-1">
-                                      <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
-                                    </span>
-                                  )}
-                                </div>
+                                )}
                               </div>
                             </div>
 
+                            {/* Middle Section: Uniform Date & Halachic Time Box */}
+                            <div className="bg-amber-50/60 border border-amber-200/70 rounded-xl px-3 py-2 mt-auto">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs sm:text-sm font-bold text-amber-950 font-serif truncate">
+                                  {['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][new Date(upcoming.gregorianDate).getDay()]}, {upcoming.hebrewDateStr}
+                                </span>
+                                <span className="text-[11px] text-slate-600 font-medium whitespace-nowrap">
+                                  {new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+                                    day: 'numeric',
+                                    month: 'numeric',
+                                    year: 'numeric',
+                                  })}
+                                </span>
+                              </div>
+                              {zm && (
+                                <div className="text-[11px] font-semibold text-amber-800 mt-1 flex items-center gap-1 whitespace-nowrap">
+                                  <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bottom Footer Section */}
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                               <span className="text-[11px] font-bold text-slate-500 font-serif">
                                 {formatAnniversaryYearText(upcoming.yearsPassed)}
@@ -2121,9 +2134,9 @@ export default function HomePage() {
                                 onClick={(e) => e.stopPropagation()}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
                               >
-                                <CalendarIcon className="w-3 h-3 text-blue-600" />
+                                <CalendarIcon className="w-3 h-3 text-blue-600 shrink-0" />
                                 <span>הוסף ליומן</span>
                               </a>
                             </div>
