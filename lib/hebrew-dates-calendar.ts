@@ -627,6 +627,13 @@ export interface LivePreviewData {
   } | null;
 }
 
+const ALLOWED_NATIONAL_MODERN_DESCS = new Set([
+  'Yom HaShoah',
+  'Yom HaZikaron',
+  "Yom HaAtzma'ut",
+  'Yom Yerushalayim',
+]);
+
 /**
  * Computes a live preview for the HebrewCalendarSyncModal so the user can see
  * exactly how Today's Hebrew Date + Zmanim, the Upcoming Shabbat, and the Next Holiday/Fast look.
@@ -690,13 +697,6 @@ export function getHebrewCalendarLivePreview(options: HebrewCalendarFeedOptions)
     noRoshChodesh: !options.roshChodesh,
     omer: false,
   });
-
-const ALLOWED_NATIONAL_MODERN_DESCS = new Set([
-  'Yom HaShoah',
-  'Yom HaZikaron',
-  "Yom HaAtzma'ut",
-  'Yom Yerushalayim',
-]);
 
   let upcomingHolidayOrFast: LivePreviewData['upcomingHolidayOrFast'] = null;
   for (const ev of rawEvents) {
