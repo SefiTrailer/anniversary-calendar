@@ -63,11 +63,22 @@ export async function GET(
   const queryCalName = request.nextUrl.searchParams.get('calName');
   const queryType = request.nextUrl.searchParams.get('type'); // 'memorials' | 'simchas' | 'all'
   const queryBirthdays = request.nextUrl.searchParams.get('birthdays');
+  const queryZShkia = request.nextUrl.searchParams.get('zShkia');
+  const queryZTzeit = request.nextUrl.searchParams.get('zTzeit');
+  const queryZEve = request.nextUrl.searchParams.get('zEve');
 
   const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
   if (rawSelected.includes('status:pending')) {
     return new NextResponse('הבקשה להצטרף לענף ממתינה לאישור בעל היומן', { status: 403 });
   }
+
+  // Optional user preferences for adding Shkia and/or Tzeit HaKochavim of the start of the Yahrzeit
+  const includeStartShkia =
+    queryZShkia !== null ? queryZShkia === '1' || queryZShkia === 'true' : rawSelected.includes('zShkia:1');
+  const includeStartTzeit =
+    queryZTzeit !== null ? queryZTzeit === '1' || queryZTzeit === 'true' : rawSelected.includes('zTzeit:1');
+  const includeEveReminder =
+    queryZEve !== null ? queryZEve === '1' || queryZEve === 'true' : rawSelected.includes('zEveReminder:1');
 
   // Determine feed type so Memorials (יארצייט) and Simchas (ימי הולדת וימי נישואין) can be subscribed as 2 separate colored calendars
   const feedType: 'memorials' | 'simchas' | 'all' =
@@ -104,7 +115,10 @@ export async function GET(
     ? querySkipGens
     : storedSkipGensToken
     ? storedSkipGensToken.replace('skipGens:', '')
-    : '';
+    : rawSelected
+        .filter(s => s.startsWith('skipGen:'))
+        .map(s => s.replace('skipGen:', ''))
+        .join(',');
   const skippedGenSet = new Set<number>(
     effectiveSkipGensStr
       .split(',')
@@ -268,23 +282,29 @@ export async function GET(
       const [y, m, d] = upcoming.gregorianDateStr.split('-').map(Number);
       if (!y || !m || !d) continue;
 
-      let startDate: Date;
-      let endDate: Date;
-      let allDay = true;
+      // Place the event ONLY on the date of that day itself (single-day all-day event),
+      // so it never stretches across two days starting from the day before!
+      const startDate = new Date(Date.UTC(y, m - 1, d));
+      const endDate = new Date(Date.UTC(y, m - 1, d + 1));
+      const allDay = true;
       let zmanimLine = '';
+      let timesTitleSuffix = '';
+      let zmanimInfo: ReturnType<typeof getHalachicYahrzeitTimes> | null = null;
 
       if (!living) {
-        // Yahrzeit event starts at exact Tzeit HaKochavim (previous evening) and ends at exact Shkia (sunset of the day)
-        const zmanimInfo = getHalachicYahrzeitTimes(upcoming.gregorianDateStr);
-        startDate = zmanimInfo.startTzeit;
-        endDate = zmanimInfo.endShkia;
-        allDay = false;
-        zmanimLine = `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם ומסתיים בשקיעה (${zmanimInfo.endShkiaFormatted})`;
-      } else {
-        // Simcha / Birthday / Anniversary event
-        startDate = new Date(Date.UTC(y, m - 1, d));
-        endDate = new Date(Date.UTC(y, m - 1, d + 1));
-        allDay = true;
+        zmanimInfo = getHalachicYahrzeitTimes(upcoming.gregorianDateStr);
+        zmanimLine = `🕯️ זמני היארצייט: מתחיל בערב הקודם בשקיעה (${zmanimInfo.startShkiaFormatted}) / צאת הכוכבים (${zmanimInfo.startTzeitFormatted}) ומסתיים בשקיעה (${zmanimInfo.endShkiaFormatted})`;
+
+        const chosenTimesParts: string[] = [];
+        if (includeStartShkia) {
+          chosenTimesParts.push(`שקיעה ${zmanimInfo.startShkiaFormatted}`);
+        }
+        if (includeStartTzeit) {
+          chosenTimesParts.push(`צאה״כ ${zmanimInfo.startTzeitFormatted}`);
+        }
+        if (chosenTimesParts.length > 0) {
+          timesTitleSuffix = ` • מתחיל בערב (${chosenTimesParts.join(' | ')})`;
+        }
       }
 
       const yearsPassedText =
@@ -298,8 +318,36 @@ export async function GET(
             : ` (שנת ה-${upcoming.yearsPassed})`
           : '';
 
+      const eventDescription = living
+        ? [
+            `${simchaLabel} של ${fullDisplayName}`,
+            leiluyText ? `ייחוס משפחתי: ${leiluyText}` : '',
+            relationLine,
+            `תאריך עברי: ${originalDateFormatted}`,
+            `ענף משפחתי: ${branchName}`,
+            lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
+            cleanNotes ? `הערות: ${cleanNotes}` : '',
+            `צפייה באילן: ${lineageUrl}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : [
+            `יום השנה לפטירת ${fullDisplayName}`,
+            zmanimLine,
+            leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
+            relationLine,
+            `תאריך עברי: ${originalDateFormatted}`,
+            `ענף משפחתי: ${branchName}`,
+            lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
+            cleanNotes ? `הערות: ${cleanNotes}` : '',
+            dec.after_sunset ? 'הערה הלכתית: הפטירה לאחר שקיעה/צאת הכוכבים.' : '',
+            `צפייה באילן: ${lineageUrl}`,
+          ]
+            .filter(Boolean)
+            .join('\n');
+
       pendingEvents.push({
-        id: `${living ? simchaType : 'yahrzeit'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
+        id: `${living ? simchaType : 'yahrzeit-day'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
         gregorianDateStr: upcoming.gregorianDateStr,
         startDate,
         endDate,
@@ -307,35 +355,31 @@ export async function GET(
         isUpcomingFromToday: upcoming.gregorianDateStr >= todayUtcStr,
         summary: living
           ? `${simchaLabel}: ${conciseName}${yearsPassedText}`
-          : `🕯️ יארצייט: ${conciseName}${yearsPassedText}`,
-        description: living
-          ? [
-              `${simchaLabel} של ${fullDisplayName}`,
-              leiluyText ? `ייחוס משפחתי: ${leiluyText}` : '',
-              relationLine,
-              `תאריך עברי: ${originalDateFormatted}`,
-              `ענף משפחתי: ${branchName}`,
-              lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
-              cleanNotes ? `הערות: ${cleanNotes}` : '',
-              `צפייה באילן: ${lineageUrl}`,
-            ]
-              .filter(Boolean)
-              .join('\n')
-          : [
-              `יום השנה לפטירת ${fullDisplayName}`,
-              zmanimLine,
-              leiluyText ? `לעילוי נשמת: ${leiluyText}` : '',
-              relationLine,
-              `תאריך עברי: ${originalDateFormatted}`,
-              `ענף משפחתי: ${branchName}`,
-              lineageChain ? `שרשרת היוחסין: ${lineageChain}` : '',
-              cleanNotes ? `הערות: ${cleanNotes}` : '',
-              dec.after_sunset ? 'הערה הלכתית: הפטירה לאחר שקיעה/צאת הכוכבים.' : '',
-              `צפייה באילן: ${lineageUrl}`,
-            ]
-              .filter(Boolean)
-              .join('\n'),
+          : `🕯️ יארצייט: ${conciseName}${yearsPassedText}${timesTitleSuffix}`,
+        description: eventDescription,
       });
+
+      // Optional point reminder on the evening before (when the user explicitly checks "תזכורת בערב שלפני")
+      if (!living && includeEveReminder && zmanimInfo) {
+        const eveStart = includeStartShkia ? zmanimInfo.startShkia : zmanimInfo.startTzeit;
+        const eveEnd = new Date(eveStart.getTime() + 15 * 60 * 1000);
+        const eveParts: string[] = [];
+        if (includeStartShkia) eveParts.push(`שקיעה ${zmanimInfo.startShkiaFormatted}`);
+        if (includeStartTzeit) eveParts.push(`צאה״כ ${zmanimInfo.startTzeitFormatted}`);
+        if (eveParts.length === 0) {
+          eveParts.push(`שקיעה ${zmanimInfo.startShkiaFormatted} | צאה״כ ${zmanimInfo.startTzeitFormatted}`);
+        }
+        pendingEvents.push({
+          id: `yahrzeit-eve-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
+          gregorianDateStr: upcoming.gregorianDateStr,
+          startDate: eveStart,
+          endDate: eveEnd,
+          allDay: false,
+          isUpcomingFromToday: upcoming.gregorianDateStr >= todayUtcStr,
+          summary: `🕯️ הדלקת נר (ליל יארצייט): ${conciseName} (${eveParts.join(' | ')})`,
+          description: eventDescription,
+        });
+      }
     }
   }
 

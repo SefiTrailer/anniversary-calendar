@@ -855,7 +855,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                               return (
                                 <p className="text-[11px] font-semibold text-amber-900 mt-1 flex items-center gap-1 font-sans">
                                   <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
+                                  <span>מתחיל בערב הקודם: שקיעה {zm.startShkiaFormatted} | צאה״כ {zm.startTzeitFormatted}</span>
                                 </p>
                               );
                             })()}

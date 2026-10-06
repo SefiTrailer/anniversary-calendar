@@ -69,6 +69,9 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   const [maxGen, setMaxGen] = useState<string>('all');
   const [skippedGens, setSkippedGens] = useState<number[]>([]);
   const [customCalName, setCustomCalName] = useState<string>('');
+  const [includeStartShkia, setIncludeStartShkia] = useState<boolean>(false);
+  const [includeStartTzeit, setIncludeStartTzeit] = useState<boolean>(false);
+  const [includeEveReminder, setIncludeEveReminder] = useState<boolean>(false);
   const [copiedMemorials, setCopiedMemorials] = useState(false);
   const [copiedSimchas, setCopiedSimchas] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -103,12 +106,19 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
       const savedCalName = raw.find((s) => s.startsWith('calName:'));
       setCustomCalName(savedCalName ? savedCalName.replace(/^calName:/, '') : formatCalendarDisplayName(calendarName));
+
+      setIncludeStartShkia(raw.includes('zShkia:1'));
+      setIncludeStartTzeit(raw.includes('zTzeit:1'));
+      setIncludeEveReminder(raw.includes('zEveReminder:1'));
     } else {
       setSelectedBranches(allIds);
       setSelectedSubBranch('all');
       setMaxGen('all');
       setSkippedGens([]);
       setCustomCalName(formatCalendarDisplayName(calendarName));
+      setIncludeStartShkia(false);
+      setIncludeStartTzeit(false);
+      setIncludeEveReminder(false);
     }
   }, [membership, branches, isOpen, calendarName]);
 
@@ -117,7 +127,10 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     nextSub: string,
     nextMaxGen: string,
     nextSkippedGens: number[] = skippedGens,
-    nextCalName: string = customCalName
+    nextCalName: string = customCalName,
+    nextShkia: boolean = includeStartShkia,
+    nextTzeit: boolean = includeStartTzeit,
+    nextEveReminder: boolean = includeEveReminder
   ) => {
     const combined: string[] = [...nextUuids];
     if (nextSub && nextSub !== 'all') combined.push(nextSub);
@@ -126,6 +139,22 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     const cleanName = nextCalName.trim();
     if (cleanName && cleanName !== defaultDisplayName) {
       combined.push(`calName:${cleanName}`);
+    }
+    if (nextShkia) combined.push('zShkia:1');
+    if (nextTzeit) combined.push('zTzeit:1');
+    if (nextEveReminder) combined.push('zEveReminder:1');
+
+    // Preserve user tree position tokens if present
+    const existingRaw = Array.isArray(membership?.selected_branch_ids) ? membership!.selected_branch_ids : [];
+    for (const tok of existingRaw) {
+      if (
+        tok.startsWith('userGen:') ||
+        tok.startsWith('treeRelation:') ||
+        tok.startsWith('treeAnchorId:') ||
+        tok.startsWith('treeAnchorName:')
+      ) {
+        combined.push(tok);
+      }
     }
 
     setIsSaving(true);
@@ -170,12 +199,17 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   const effectiveCalName = customCalName.trim() || defaultDisplayName;
 
   const buildFeedUrls = (feedType: 'memorials' | 'simchas') => {
-    const queryParams = new URLSearchParams({ v: '5', type: feedType });
+    const queryParams = new URLSearchParams({ v: '6', type: feedType });
     if (selectedSubBranch !== 'all') queryParams.set('subBranch', selectedSubBranch);
     if (maxGen !== 'all') queryParams.set('maxGen', maxGen);
     if (skippedGens.length > 0) queryParams.set('skipGens', skippedGens.join(','));
-    if (feedType === 'memorials' && effectiveCalName !== defaultDisplayName) {
-      queryParams.set('calName', effectiveCalName);
+    if (feedType === 'memorials') {
+      if (effectiveCalName !== defaultDisplayName) {
+        queryParams.set('calName', effectiveCalName);
+      }
+      if (includeStartShkia) queryParams.set('zShkia', '1');
+      if (includeStartTzeit) queryParams.set('zTzeit', '1');
+      if (includeEveReminder) queryParams.set('zEve', '1');
     }
     const qs = queryParams.toString();
     const https = `${origin}/api/calendar/${token}.ics?${qs}`;
@@ -226,6 +260,51 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   const handleSaveCalName = async (nextName: string) => {
     setCustomCalName(nextName);
     await persistSelection(selectedBranches, selectedSubBranch, maxGen, skippedGens, nextName);
+  };
+
+  const handleToggleStartShkia = async () => {
+    const next = !includeStartShkia;
+    setIncludeStartShkia(next);
+    await persistSelection(
+      selectedBranches,
+      selectedSubBranch,
+      maxGen,
+      skippedGens,
+      customCalName,
+      next,
+      includeStartTzeit,
+      includeEveReminder
+    );
+  };
+
+  const handleToggleStartTzeit = async () => {
+    const next = !includeStartTzeit;
+    setIncludeStartTzeit(next);
+    await persistSelection(
+      selectedBranches,
+      selectedSubBranch,
+      maxGen,
+      skippedGens,
+      customCalName,
+      includeStartShkia,
+      next,
+      includeEveReminder
+    );
+  };
+
+  const handleToggleEveReminder = async () => {
+    const next = !includeEveReminder;
+    setIncludeEveReminder(next);
+    await persistSelection(
+      selectedBranches,
+      selectedSubBranch,
+      maxGen,
+      skippedGens,
+      customCalName,
+      includeStartShkia,
+      includeStartTzeit,
+      next
+    );
   };
 
   const copyMemorialsUrl = () => {
@@ -498,11 +577,83 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                     />
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-200 text-[11px] text-amber-950 flex items-start gap-1.5">
-                    <Sunset className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>זמנים הלכתיים מדויקים:</strong> כל אירוע יארצייט מתחיל בדיוק ב<strong>צאת הכוכבים</strong> בערב שלפני ומסתיים ב<strong>שקיעת החמה</strong> ביום היארצייט עצמו.
-                    </span>
+                  <div className="p-3 rounded-xl bg-amber-100/70 border border-amber-200 text-[11px] text-amber-950 space-y-2.5">
+                    <div className="flex items-start gap-1.5">
+                      <Sunset className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-extrabold block text-amber-950">
+                          📅 מופיע רק בתאריך של אותו היום (ללא מתיחה מהיום הקודם)
+                        </span>
+                        <span className="text-amber-900/90 leading-snug block mt-0.5">
+                          ניתן לבחור האם להוסיף לכותרת האירוע את שעת השקיעה ו/או צאת הכוכבים שבהן מתחיל היארצייט (בערב הקודם), כל אחד לפי רצונו:
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
+                      <label
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${
+                          includeStartShkia
+                            ? 'bg-white border-amber-500 text-amber-950 font-extrabold shadow-2xs'
+                            : 'bg-white/60 border-amber-200 text-slate-700 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={includeStartShkia}
+                          onChange={handleToggleStartShkia}
+                          className="w-3.5 h-3.5 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                        />
+                        <span>🌅 הוסף שעת שקיעה (תחילת היארצייט)</span>
+                      </label>
+
+                      <label
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${
+                          includeStartTzeit
+                            ? 'bg-white border-amber-500 text-amber-950 font-extrabold shadow-2xs'
+                            : 'bg-white/60 border-amber-200 text-slate-700 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={includeStartTzeit}
+                          onChange={handleToggleStartTzeit}
+                          className="w-3.5 h-3.5 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                        />
+                        <span>✨ הוסף שעת צאת הכוכבים</span>
+                      </label>
+                    </div>
+
+                    <label
+                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${
+                        includeEveReminder
+                          ? 'bg-white border-amber-500 text-amber-950 font-extrabold shadow-2xs'
+                          : 'bg-white/50 border-amber-200/80 text-slate-600 hover:bg-white'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={includeEveReminder}
+                        onChange={handleToggleEveReminder}
+                        className="w-3.5 h-3.5 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                      />
+                      <span>🕯️ הוסף גם תזכורת קצרה בערב שלפני (להדלקת נר יארצייט)</span>
+                    </label>
+
+                    <div className="bg-white/90 border border-amber-300/80 rounded-lg px-2.5 py-1.5 text-[10px] text-slate-700">
+                      <span className="font-bold text-amber-900">תצוגה ביומן (באותו היום בלבד): </span>
+                      <span className="font-mono font-bold text-slate-900">
+                        🕯️ יארצייט: שם הנפטר ז״ל
+                        {includeStartShkia || includeStartTzeit
+                          ? ` • מתחיל בערב (${[
+                              includeStartShkia ? 'שקיעה 18:20' : '',
+                              includeStartTzeit ? 'צאה״כ 18:54' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' | ')})`
+                          : ''}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

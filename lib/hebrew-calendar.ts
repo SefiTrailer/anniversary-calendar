@@ -363,8 +363,10 @@ const JERUSALEM_TIME_FORMATTER = new Intl.DateTimeFormat('he-IL', {
 const halachicTimesCache = new Map<
   string,
   {
+    startShkia: Date;
     startTzeit: Date;
     endShkia: Date;
+    startShkiaFormatted: string;
     startTzeitFormatted: string;
     endShkiaFormatted: string;
     startTimeFormatted: string;
@@ -373,8 +375,10 @@ const halachicTimesCache = new Map<
 >();
 
 export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
+  startShkia: Date;
   startTzeit: Date;
   endShkia: Date;
+  startShkiaFormatted: string;
   startTzeitFormatted: string;
   endShkiaFormatted: string;
   startTimeFormatted: string;
@@ -389,7 +393,8 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
   const baseMonth = (m || 1) - 1;
   const baseDay = d || 1;
 
-  // Fallback times (18:30 previous evening to 18:00 current day in UTC+3)
+  // Fallback times (18:05 sunset / 18:30 tzeit previous evening to 18:00 current day in UTC+3)
+  let startShkia = new Date(Date.UTC(baseYear, baseMonth, baseDay - 1, 15, 5, 0));
   let startTzeit = new Date(Date.UTC(baseYear, baseMonth, baseDay - 1, 15, 30, 0));
   let endShkia = new Date(Date.UTC(baseYear, baseMonth, baseDay, 15, 0, 0));
 
@@ -400,9 +405,13 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
     const zmanimEve = new Zmanim(JERUSALEM_GLOC, eveLocal, false);
     const zmanimDay = new Zmanim(JERUSALEM_GLOC, dayLocal, false);
 
+    const calcEveSunset = zmanimEve.sunset();
     const calcTzeit = zmanimEve.tzeit();
     const calcSunset = zmanimDay.sunset();
 
+    if (calcEveSunset && !isNaN(calcEveSunset.getTime())) {
+      startShkia = calcEveSunset;
+    }
     if (calcTzeit && !isNaN(calcTzeit.getTime())) {
       startTzeit = calcTzeit;
     }
@@ -413,12 +422,15 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
     // Keep safe fallback if Zmanim throws
   }
 
+  const startShkiaFormatted = JERUSALEM_TIME_FORMATTER.format(startShkia);
   const startTzeitFormatted = JERUSALEM_TIME_FORMATTER.format(startTzeit);
   const endShkiaFormatted = JERUSALEM_TIME_FORMATTER.format(endShkia);
 
   const computed = {
+    startShkia,
     startTzeit,
     endShkia,
+    startShkiaFormatted,
     startTzeitFormatted,
     endShkiaFormatted,
     startTimeFormatted: startTzeitFormatted,
@@ -876,13 +888,14 @@ function formatDateToGoogleUtcTimestamp(dateObj: Date): string {
 
 /**
  * Generates a direct 1-click Google Calendar add URL for an upcoming Yahrzeit or Hebrew Birthday / Simcha event.
- * For Yahrzeits, sets the exact Halachic start time at Tzeit HaKochavim (previous evening) and end time at Shkia (sunset).
+ * Places the event strictly on the date of that day itself (all-day event), with optional Shkia / Tzeit HaKochavim times in the title.
  */
 export function getGoogleCalendarDirectAddUrl(
   person: DeceasedRecord & { lineage_path?: any[] },
   upcoming: UpcomingYahrzeit,
   branchName?: string,
-  appOrigin?: string
+  appOrigin?: string,
+  zmanimOptions?: { includeStartShkia?: boolean; includeStartTzeit?: boolean }
 ): string {
   const living = isPersonLiving(person);
   const simchaType = getSimchaType(person);
@@ -895,9 +908,25 @@ export function getGoogleCalendarDirectAddUrl(
       ? '🥂 שמחה משפחתית'
       : '🎂 יום הולדת עברי';
 
+  const zmanimInfo = !living && upcoming.gregorianDateStr
+    ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr)
+    : null;
+
+  const chosenTimesParts: string[] = [];
+  if (!living && zmanimInfo) {
+    if (zmanimOptions?.includeStartShkia) {
+      chosenTimesParts.push(`שקיעה ${zmanimInfo.startShkiaFormatted}`);
+    }
+    if (zmanimOptions?.includeStartTzeit) {
+      chosenTimesParts.push(`צאה״כ ${zmanimInfo.startTzeitFormatted}`);
+    }
+  }
+  const timesTitleSuffix =
+    chosenTimesParts.length > 0 ? ` • מתחיל בערב הקודם (${chosenTimesParts.join(' | ')})` : '';
+
   const title = living
     ? `${simchaPrefix}: ${fullDisplayName} (${formatSimchaYearText(upcoming.yearsPassed, simchaType)})`
-    : `🕯️ יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})`;
+    : `🕯️ יארצייט: ${fullDisplayName} (${formatAnniversaryYearText(upcoming.yearsPassed)})${timesTitleSuffix}`;
 
   const originalDate = formatDisplayDateWithGregorian(
     person.hebrew_day,
@@ -912,9 +941,6 @@ export function getGoogleCalendarDirectAddUrl(
   const lineageChain = formatLineageChainText(person.lineage_path);
   const lineageUrl = appOrigin && person.id ? `${appOrigin}?lineage=${person.id}` : '';
   const cleanNotes = cleanLivingMarkerFromText(person.notes);
-  const zmanimInfo = !living && upcoming.gregorianDateStr
-    ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr)
-    : null;
 
   const details = living
     ? [
@@ -932,7 +958,7 @@ export function getGoogleCalendarDirectAddUrl(
     : [
         `יום השנה לפטירת ${fullDisplayName}`,
         zmanimInfo
-          ? `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם עד השקיעה למחרת (${zmanimInfo.endShkiaFormatted})`
+          ? `🕯️ זמני היארצייט: מתחיל בערב הקודם בשקיעה (${zmanimInfo.startShkiaFormatted}) / צאת הכוכבים (${zmanimInfo.startTzeitFormatted}) עד השקיעה ביום היארצייט (${zmanimInfo.endShkiaFormatted})`
           : '',
         relationLine,
         `תאריך עברי מקורי: ${originalDate}`,
@@ -945,31 +971,24 @@ export function getGoogleCalendarDirectAddUrl(
         .filter(Boolean)
         .join('\n');
 
-  let datesParam = '';
-  if (!living && zmanimInfo) {
-    datesParam = `${formatDateToGoogleUtcTimestamp(zmanimInfo.startTzeit)}/${formatDateToGoogleUtcTimestamp(
-      zmanimInfo.endShkia
-    )}`;
+  const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
+  let startStr: string;
+  let endStr: string;
+  if (y && m && d) {
+    const startUtc = new Date(Date.UTC(y, m - 1, d));
+    const endUtc = new Date(Date.UTC(y, m - 1, d + 1));
+    startStr = startUtc.toISOString().slice(0, 10).replace(/-/g, '');
+    endStr = endUtc.toISOString().slice(0, 10).replace(/-/g, '');
   } else {
-    const [y, m, d] = (upcoming.gregorianDateStr || '').split('-').map(Number);
-    let startStr: string;
-    let endStr: string;
-    if (y && m && d) {
-      const startUtc = new Date(Date.UTC(y, m - 1, d));
-      const endUtc = new Date(Date.UTC(y, m - 1, d + 1));
-      startStr = startUtc.toISOString().slice(0, 10).replace(/-/g, '');
-      endStr = endUtc.toISOString().slice(0, 10).replace(/-/g, '');
-    } else {
-      const start = new Date(upcoming.gregorianDate);
-      const sy = start.getFullYear();
-      const sm = String(start.getMonth() + 1).padStart(2, '0');
-      const sd = String(start.getDate()).padStart(2, '0');
-      startStr = `${sy}${sm}${sd}`;
-      const end = new Date(sy, start.getMonth(), start.getDate() + 1);
-      endStr = `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, '0')}${String(end.getDate()).padStart(2, '0')}`;
-    }
-    datesParam = `${startStr}/${endStr}`;
+    const start = new Date(upcoming.gregorianDate);
+    const sy = start.getFullYear();
+    const sm = String(start.getMonth() + 1).padStart(2, '0');
+    const sd = String(start.getDate()).padStart(2, '0');
+    startStr = `${sy}${sm}${sd}`;
+    const end = new Date(sy, start.getMonth(), start.getDate() + 1);
+    endStr = `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, '0')}${String(end.getDate()).padStart(2, '0')}`;
   }
+  const datesParam = `${startStr}/${endStr}`;
 
   const params = new URLSearchParams({
     action: 'TEMPLATE',

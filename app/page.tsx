@@ -1069,24 +1069,40 @@ export default function HomePage() {
       .filter(Boolean);
   }, [membership]);
 
+  const savedZShkia = useMemo(
+    () => (membership?.selected_branch_ids || []).includes('zShkia:1'),
+    [membership]
+  );
+  const savedZTzeit = useMemo(
+    () => (membership?.selected_branch_ids || []).includes('zTzeit:1'),
+    [membership]
+  );
+  const savedZEve = useMemo(
+    () => (membership?.selected_branch_ids || []).includes('zEveReminder:1'),
+    [membership]
+  );
+
   const webcalFeedUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
     const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    const params = new URLSearchParams({ v: '5', type: 'memorials' });
+    const params = new URLSearchParams({ v: '6', type: 'memorials' });
     if (savedCustomCalName) params.set('calName', savedCustomCalName);
     if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
     if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
+    if (savedZShkia) params.set('zShkia', '1');
+    if (savedZTzeit) params.set('zTzeit', '1');
+    if (savedZEve) params.set('zEve', '1');
     return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
-  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens]);
+  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens, savedZShkia, savedZTzeit, savedZEve]);
 
   const simchasWebcalUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
     const host = typeof window !== 'undefined' ? window.location.host : 'yomzikaron.vercel.app';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const protocol = isHttps ? 'webcal:' : 'http:';
-    const params = new URLSearchParams({ v: '5', type: 'simchas' });
+    const params = new URLSearchParams({ v: '6', type: 'simchas' });
     if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
     if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
     return `${protocol}//${host}/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
@@ -1104,12 +1120,15 @@ export default function HomePage() {
 
   const icsDownloadUrl = useMemo(() => {
     if (!membership?.feed_token) return '';
-    const params = new URLSearchParams({ v: '5', type: 'memorials' });
+    const params = new URLSearchParams({ v: '6', type: 'memorials' });
     if (savedCustomCalName) params.set('calName', savedCustomCalName);
     if (savedMaxGen && savedMaxGen !== 'all') params.set('maxGen', savedMaxGen);
     if (savedSkipGens.length > 0) params.set('skipGens', savedSkipGens.join(','));
+    if (savedZShkia) params.set('zShkia', '1');
+    if (savedZTzeit) params.set('zTzeit', '1');
+    if (savedZEve) params.set('zEve', '1');
     return `/api/calendar/${membership.feed_token}.ics?${params.toString()}`;
-  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens]);
+  }, [membership, savedCustomCalName, savedMaxGen, savedSkipGens, savedZShkia, savedZTzeit, savedZEve]);
 
   const isAdmin = Boolean(
     currentUser &&
@@ -1568,7 +1587,7 @@ export default function HomePage() {
                                   {zm && (
                                     <span className="text-[11px] font-semibold text-amber-800 mt-0.5 flex items-center gap-1">
                                       <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
+                                      <span>מתחיל בערב הקודם: שקיעה {zm.startShkiaFormatted} | צאה״כ {zm.startTzeitFormatted}</span>
                                     </span>
                                   )}
                                 </div>
@@ -2531,7 +2550,7 @@ export default function HomePage() {
                               {zm && (
                                 <div className="text-[11px] font-semibold text-amber-800 mt-1 flex items-center gap-1 whitespace-nowrap">
                                   <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
+                                  <span>מתחיל בערב הקודם: שקיעה {zm.startShkiaFormatted} | צאה״כ {zm.startTzeitFormatted}</span>
                                 </div>
                               )}
                             </div>
@@ -2546,7 +2565,8 @@ export default function HomePage() {
                                   person,
                                   upcoming,
                                   personBranch?.name,
-                                  typeof window !== 'undefined' ? window.location.origin : ''
+                                  typeof window !== 'undefined' ? window.location.origin : '',
+                                  { includeStartShkia: savedZShkia, includeStartTzeit: savedZTzeit }
                                 )}
                                 onClick={(e) => e.stopPropagation()}
                                 target="_blank"
@@ -2665,10 +2685,10 @@ export default function HomePage() {
                   type="button"
                   onClick={() => setIsSyncModalOpen(true)}
                   className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap"
-                  title="בחר כמה דורות להכניס ליומן או וותר על דורות ספציפיים (כמו דור 6-7)"
+                  title="בחר כמה דורות להכניס ליומן והאם להוסיף שעת שקיעה / צאת הכוכבים ליארצייט"
                 >
                   <GitCommit className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>סינון דורות</span>
+                  <span>סינון דורות וזמנים</span>
                 </button>
 
                 {icsDownloadUrl && (
