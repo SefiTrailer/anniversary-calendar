@@ -697,6 +697,13 @@ export default function HomePage() {
     branchIds: string[]
   ) => {
     if (!currentCalendar || !currentUser) return;
+    setCalendarMembers((prev) =>
+      prev.map((m) =>
+        m.user_email.toLowerCase() === memberEmail.toLowerCase()
+          ? { ...m, role, selected_branch_ids: branchIds }
+          : m
+      )
+    );
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -237,14 +237,73 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     });
   };
 
-  const toggleEditBranch = (id: string) => {
-    setEditBranchIds((prev) => {
-      if (prev.includes(id)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((bId) => bId !== id);
-      }
-      return [...prev, id];
-    });
+  const buildFinalMemberTags = (
+    m: UserMembership,
+    nextBranchIds: string[],
+    nextSubBranch: string,
+    nextMaxGen: string
+  ) => {
+    const validBranchUuidSet = new Set(branches.map((b) => b.id));
+    const existingTags = m.selected_branch_ids || [];
+    // Preserve metadata tags such as targetCal:, userGen:, treeRelation:, treeAnchorId:, treeAnchorName:, reqNote:
+    const preservedMetaTags = existingTags.filter(
+      (t) =>
+        !validBranchUuidSet.has(t) &&
+        t !== 'status:pending' &&
+        !t.startsWith('reqRole:') &&
+        !t.startsWith('maxGen:') &&
+        !t.startsWith('gen2:') &&
+        !t.startsWith('gen3:') &&
+        !t.startsWith('gen4:')
+    );
+
+    return [
+      ...(nextBranchIds.length > 0 ? nextBranchIds : branches.map((b) => b.id)),
+      ...(nextSubBranch !== 'all' ? [nextSubBranch] : []),
+      ...(nextMaxGen !== 'all' ? [`maxGen:${nextMaxGen}`] : []),
+      ...preservedMetaTags,
+    ];
+  };
+
+  const autoPersistApprovedMember = async (
+    m: UserMembership,
+    nextBranchIds: string[],
+    nextSubBranch: string,
+    nextMaxGen: string,
+    nextRole: 'member' | 'editor'
+  ) => {
+    if (!onManageMember) return;
+    const isPending = (m.selected_branch_ids || []).includes('status:pending');
+    if (isPending) return; // Pending requests are saved when clicking Approve
+    setSavingEditEmail(m.user_email);
+    try {
+      const finalBranchIds = buildFinalMemberTags(m, nextBranchIds, nextSubBranch, nextMaxGen);
+      await onManageMember(m.user_email, m.user_name, nextRole, finalBranchIds);
+      setSavedMemberEmail(m.user_email);
+      setTimeout(() => setSavedMemberEmail(null), 2500);
+    } catch (err) {
+      console.error('Failed to auto-save member branch permissions:', err);
+    } finally {
+      setSavingEditEmail(null);
+    }
+  };
+
+  const toggleEditBranch = (id: string, memberToAutoSave?: UserMembership) => {
+    const nextBranchIds = editBranchIds.includes(id)
+      ? editBranchIds.length === 1
+        ? editBranchIds
+        : editBranchIds.filter((bId) => bId !== id)
+      : [...editBranchIds, id];
+    setEditBranchIds(nextBranchIds);
+    if (memberToAutoSave && nextBranchIds !== editBranchIds) {
+      autoPersistApprovedMember(
+        memberToAutoSave,
+        nextBranchIds,
+        editSubBranch,
+        editMaxGen,
+        editRole
+      );
+    }
   };
 
   const startEditMember = (m: UserMembership) => {
@@ -278,26 +337,12 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     if (!onManageMember) return;
     setSavingEditEmail(m.user_email);
     try {
-      const validBranchUuidSet = new Set(branches.map((b) => b.id));
-      const existingTags = m.selected_branch_ids || [];
-      // Preserve metadata tags such as targetCal:, userGen:, treeRelation:, treeAnchorId:, treeAnchorName:, reqNote:
-      const preservedMetaTags = existingTags.filter(
-        (t) =>
-          !validBranchUuidSet.has(t) &&
-          t !== 'status:pending' &&
-          !t.startsWith('reqRole:') &&
-          !t.startsWith('maxGen:') &&
-          !t.startsWith('gen2:') &&
-          !t.startsWith('gen3:') &&
-          !t.startsWith('gen4:')
+      const finalBranchIds = buildFinalMemberTags(
+        m,
+        editBranchIds,
+        editSubBranch,
+        editMaxGen
       );
-
-      const finalBranchIds = [
-        ...(editBranchIds.length > 0 ? editBranchIds : branches.map((b) => b.id)),
-        ...(editSubBranch !== 'all' ? [editSubBranch] : []),
-        ...(editMaxGen !== 'all' ? [`maxGen:${editMaxGen}`] : []),
-        ...preservedMetaTags,
-      ];
 
       await onManageMember(
         m.user_email,
@@ -1057,30 +1102,50 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                 </div>
 
                 {approvedMembers.length > 0 ? (
-                  <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                  <div className="space-y-2.5">
                     {approvedMembers.map((m) => {
                       const isOwnerMember =
                         m.user_email === calendar.created_by_user_id || m.role === 'admin';
+                      const isEditingThis = editingMemberEmail === m.user_email;
+                      const isSavedThis = savedMemberEmail === m.user_email;
                       const tags = m.selected_branch_ids || [];
+
+                      const activeBranchUuidList = isEditingThis
+                        ? editBranchIds
+                        : tags.filter((t) => branches.some((b) => b.id === t));
                       const memberBranches = branches
-                        .filter((b) => tags.includes(b.id))
+                        .filter((b) => activeBranchUuidList.includes(b.id))
                         .map((b) => b.name);
-                      const subBranchTag = tags.find(
-                        (t) => t.startsWith('gen2:') || t.startsWith('gen3:') || t.startsWith('gen4:')
-                      );
+
+                      const subBranchTag = isEditingThis
+                        ? editSubBranch !== 'all'
+                          ? editSubBranch
+                          : undefined
+                        : tags.find(
+                            (t) =>
+                              t.startsWith('gen2:') ||
+                              t.startsWith('gen3:') ||
+                              t.startsWith('gen4:')
+                          );
                       const subBranchLabel = subBranchTag
                         ? branchHierarchy.allNodesById[subBranchTag]?.shortLabel ||
                           subBranchTag.split(':').pop()
                         : null;
+
                       const maxGenTag = tags.find((t) => t.startsWith('maxGen:'));
-                      const maxGenVal = maxGenTag ? maxGenTag.replace('maxGen:', '') : null;
+                      const maxGenVal = isEditingThis
+                        ? editMaxGen !== 'all'
+                          ? editMaxGen
+                          : null
+                        : maxGenTag
+                        ? maxGenTag.replace('maxGen:', '')
+                        : null;
+
                       const isMergedToPersonalCal = tags.some((t) => t.startsWith('targetCal:'));
                       const treePos = extractUserTreePosition(tags, m.user_generation);
                       const hasCustomTreePos =
                         tags.some((t) => t.startsWith('treeRelation:') || t.startsWith('userGen:')) ||
                         Boolean(m.tree_relation || m.tree_person_name);
-                      const isEditingThis = editingMemberEmail === m.user_email;
-                      const isSavedThis = savedMemberEmail === m.user_email;
 
                       return (
                         <div
@@ -1107,7 +1172,12 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                     🔗 משולב גם ביומן האישי
                                   </span>
                                 )}
-                                {isSavedThis && (
+                                {savingEditEmail === m.user_email && (
+                                  <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-bold animate-pulse">
+                                    שומר...
+                                  </span>
+                                )}
+                                {isSavedThis && savingEditEmail !== m.user_email && (
                                   <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold">
                                     ✓ הרשאות הענפים עודכנו!
                                   </span>
@@ -1160,17 +1230,29 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                   </button>
 
                                   <select
-                                    value={m.role}
-                                    onChange={(e) =>
-                                      onManageMember(
-                                        m.user_email,
-                                        m.user_name,
-                                        e.target.value as 'member' | 'editor',
-                                        m.selected_branch_ids || selectedBranchIds
-                                      )
-                                    }
+                                    value={isEditingThis ? editRole : m.role}
+                                    onChange={(e) => {
+                                      const nextRole = e.target.value as 'member' | 'editor';
+                                      if (isEditingThis) {
+                                        setEditRole(nextRole);
+                                        autoPersistApprovedMember(
+                                          m,
+                                          editBranchIds,
+                                          editSubBranch,
+                                          editMaxGen,
+                                          nextRole
+                                        );
+                                      } else {
+                                        onManageMember(
+                                          m.user_email,
+                                          m.user_name,
+                                          nextRole,
+                                          m.selected_branch_ids || selectedBranchIds
+                                        );
+                                      }
+                                    }}
                                     className={`text-[11px] font-bold rounded-lg px-2 py-1 border cursor-pointer outline-none ${
-                                      m.role === 'editor'
+                                      (isEditingThis ? editRole : m.role) === 'editor'
                                         ? 'bg-amber-50 text-amber-900 border-amber-300'
                                         : 'bg-slate-50 text-slate-700 border-slate-200'
                                     }`}
@@ -1204,14 +1286,16 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-[11px] font-extrabold text-indigo-950 flex items-center gap-1.5">
                                   <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
-                                  <span>עדכון הרשאות גישה לענפים עבור {m.user_name}:</span>
+                                  <span>עדכון הרשאות גישה לענפים עבור {m.user_name} (נשמר אוטומטית בלחיצה):</span>
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditBranchIds(branches.map((b) => b.id));
+                                    const allIds = branches.map((b) => b.id);
+                                    setEditBranchIds(allIds);
                                     setEditSubBranch('all');
                                     setEditMaxGen('all');
+                                    autoPersistApprovedMember(m, allIds, 'all', 'all', editRole);
                                   }}
                                   className="text-[10px] font-bold text-indigo-700 hover:underline cursor-pointer"
                                 >
@@ -1227,7 +1311,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                     <button
                                       key={b.id}
                                       type="button"
-                                      onClick={() => toggleEditBranch(b.id)}
+                                      onClick={() => toggleEditBranch(b.id, m)}
                                       className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
                                         checked
                                           ? 'bg-white border-indigo-500 text-indigo-950 shadow-2xs'
@@ -1241,7 +1325,13 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                         />
                                         <span className="truncate">{b.name}</span>
                                       </span>
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200">
+                                      <span
+                                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                          checked
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-extrabold'
+                                            : 'bg-slate-50 text-slate-500 border-slate-200'
+                                        }`}
+                                      >
                                         {checked ? 'גישה ✓' : 'ללא גישה'}
                                       </span>
                                     </button>
@@ -1257,7 +1347,17 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                   </label>
                                   <select
                                     value={editSubBranch}
-                                    onChange={(e) => setEditSubBranch(e.target.value)}
+                                    onChange={(e) => {
+                                      const nextSub = e.target.value;
+                                      setEditSubBranch(nextSub);
+                                      autoPersistApprovedMember(
+                                        m,
+                                        editBranchIds,
+                                        nextSub,
+                                        editMaxGen,
+                                        editRole
+                                      );
+                                    }}
                                     className="w-full text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
                                   >
                                     <option value="all">כל תתי-הענפים בענפים שנבחרו</option>
@@ -1297,7 +1397,17 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                                   </label>
                                   <select
                                     value={editMaxGen}
-                                    onChange={(e) => setEditMaxGen(e.target.value)}
+                                    onChange={(e) => {
+                                      const nextMax = e.target.value;
+                                      setEditMaxGen(nextMax);
+                                      autoPersistApprovedMember(
+                                        m,
+                                        editBranchIds,
+                                        editSubBranch,
+                                        nextMax,
+                                        editRole
+                                      );
+                                    }}
                                     className="w-full text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
                                   >
                                     <option value="all">כל הדורות בענף (ללא הגבלה)</option>
@@ -1312,35 +1422,18 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                               </div>
 
                               <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-200/60">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold text-slate-700">סוג הרשאה:</span>
-                                  <select
-                                    value={editRole}
-                                    onChange={(e) => setEditRole(e.target.value as 'member' | 'editor')}
-                                    className="text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-800 outline-none cursor-pointer"
-                                  >
-                                    <option value="member">👁️ צפייה בלבד</option>
-                                    <option value="editor">✏️ הרשאת עריכה</option>
-                                  </select>
-                                </div>
+                                <span className="text-[10px] font-bold text-emerald-800">
+                                  ✓ כל לחיצה על ענף מעדכנת ושומרת את ההרשאה באופן מיידי
+                                </span>
 
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingMemberEmail(null)}
-                                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 cursor-pointer"
-                                  >
-                                    ביטול
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={savingEditEmail === m.user_email}
-                                    onClick={() => handleSaveMemberBranchPermissions(m)}
-                                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
-                                  >
-                                    {savingEditEmail === m.user_email ? 'שומר...' : 'שמור הרשאות ענפים'}
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  disabled={savingEditEmail === m.user_email}
+                                  onClick={() => handleSaveMemberBranchPermissions(m)}
+                                  className="px-3.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                >
+                                  {savingEditEmail === m.user_email ? 'שומר...' : '✓ סיום וסגירה'}
+                                </button>
                               </div>
                             </div>
                           )}
