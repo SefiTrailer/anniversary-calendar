@@ -16,7 +16,12 @@ import { FamilyTreeView } from '@/components/FamilyTreeView';
 import { MissingDatesView } from '@/components/MissingDatesView';
 import { HebrewBirthdaysView } from '@/components/HebrewBirthdaysView';
 import { TreePositionModal } from '@/components/TreePositionModal';
+import { HebrewCalendarSyncModal } from '@/components/HebrewCalendarSyncModal';
 import LineageModal from '@/components/LineageModal';
+import {
+  getHebrewCalendarLivePreview,
+  DEFAULT_HEBREW_CALENDAR_OPTIONS,
+} from '@/lib/hebrew-dates-calendar';
 import {
   CalendarProject,
   FamilyBranch,
@@ -141,6 +146,7 @@ export default function HomePage() {
   const [editingDeceased, setEditingDeceased] = useState<DeceasedPerson | null>(null);
   const [isGemImportModalOpen, setIsGemImportModalOpen] = useState(false);
   const [isJoinBranchModalOpen, setIsJoinBranchModalOpen] = useState(false);
+  const [isHebrewCalendarModalOpen, setIsHebrewCalendarModalOpen] = useState(false);
   const [joinModalPreselect, setJoinModalPreselect] = useState<{
     calId?: string;
     branchIds?: string[];
@@ -408,6 +414,14 @@ export default function HomePage() {
       };
     } catch {
       return { todayHebrewDate: '', todayGregorianDate: '' };
+    }
+  }, []);
+
+  const hebrewCalQuickPreview = useMemo(() => {
+    try {
+      return getHebrewCalendarLivePreview(DEFAULT_HEBREW_CALENDAR_OPTIONS);
+    } catch {
+      return null;
     }
   }, []);
 
@@ -1156,12 +1170,53 @@ export default function HomePage() {
         userTreePosition={userTreePosition}
         onUpdateUserGeneration={handleUpdateUserGeneration}
         onOpenTreePosition={() => setIsTreePositionModalOpen(true)}
+        onOpenHebrewCalendarSync={() => setIsHebrewCalendarModalOpen(true)}
         todayHebrewDate={todayHebrewDate}
         todayGregorianDate={todayGregorianDate}
       />
 
       {/* Main Page Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+        {/* ========================================================================= */}
+        {/* UNIVERSAL TOP BAR: AUTOMATIC HEBREW CALENDAR, SHABBAT, FASTS & ZMANIM    */}
+        {/* Visible to EVERYONE at the top (including unregistered guests!)          */}
+        {/* ========================================================================= */}
+        <div className="bg-gradient-to-l from-purple-950 via-indigo-950 to-slate-900 rounded-2xl p-4 sm:px-6 sm:py-4 text-white shadow-md border border-purple-700/60 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-purple-500/30 text-amber-300 border border-purple-400/40">
+                <CalendarIcon className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>פתוח לכולם (ללא צורך בהרשמה) • יומן נפרד בצבע שונה</span>
+              </span>
+              {hebrewCalQuickPreview?.upcomingShabbat && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/10 text-purple-100 border border-white/15 font-serif">
+                  <span>🕯️ השבת הקרובה: {hebrewCalQuickPreview.upcomingShabbat.parshaName}</span>
+                  <span className="text-amber-300 font-sans text-[10px]">
+                    (הדלקת נרות י-ם: {hebrewCalQuickPreview.upcomingShabbat.candleLightingTime} • צאת שבת: {hebrewCalQuickPreview.upcomingShabbat.havdalahTime})
+                  </span>
+                </span>
+              )}
+            </div>
+            <h2 className="text-sm sm:text-base font-black font-serif text-white">
+              📅 הוספת יומן אוטומטי של תאריך עברי, שבתות (פרשת השבוע וזמנים), חגים, צומות וזמני היום לבחירה ל-Google Calendar
+            </h2>
+            <p className="text-xs text-purple-200/90 leading-relaxed">
+              מתווסף כיומן נפרד בצבע שונה ביומן גוגל שלך — בחר את העיר שלך ואילו זמני היום (הנץ, סוף זמן ק״ש, תפילה, שקיעה, צאת הכוכבים ועוד), שבתות, צומות וחגים יופיעו בו.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full lg:w-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsHebrewCalendarModalOpen(true)}
+              className="w-full lg:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-l from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 rounded-xl font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition transform hover:scale-[1.01] active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              <CalendarIcon className="w-4 h-4 shrink-0" />
+              <span>📅 התאם והוסף יומן תאריך עברי וזמנים ל-Google</span>
+            </button>
+          </div>
+        </div>
+
         {/* ========================================================================= */}
         {/* VIEW 0: SHARED VIEW MODE (WHEN VISITING VIA SELECTIVE SHARE LINK)        */}
         {/* ========================================================================= */}
@@ -2728,6 +2783,11 @@ export default function HomePage() {
         onSuccess={handleAuthSuccess}
       />
 
+      <HebrewCalendarSyncModal
+        isOpen={isHebrewCalendarModalOpen}
+        onClose={() => setIsHebrewCalendarModalOpen(false)}
+      />
+
       {(currentCalendar || sharedViewData?.calendar) && (
         <DeceasedModal
           isOpen={isAddModalOpen}
@@ -2767,6 +2827,7 @@ export default function HomePage() {
             calendarName={currentCalendar.name}
             calendarOwnerName={currentCalendar.created_by_user_name || currentUser?.name}
             onUpdateBranches={handleUpdateMembershipBranches}
+            onOpenHebrewCalendarModal={() => setIsHebrewCalendarModalOpen(true)}
           />
 
           <ShareCalendarModal

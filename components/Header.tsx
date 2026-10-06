@@ -47,6 +47,7 @@ interface HeaderProps {
   userTreePosition?: UserTreePosition;
   onUpdateUserGeneration?: (gen: number) => void;
   onOpenTreePosition?: () => void;
+  onOpenHebrewCalendarSync?: () => void;
   todayHebrewDate?: string;
   todayGregorianDate?: string;
 }
@@ -73,6 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
   userTreePosition,
   onUpdateUserGeneration,
   onOpenTreePosition,
+  onOpenHebrewCalendarSync,
   todayHebrewDate,
   todayGregorianDate,
 }) => {
@@ -104,28 +106,38 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
           {/* Logo & Brand Identity */}
           <div className="flex items-center justify-between w-full lg:w-auto shrink-0">
-            <button
-              onClick={() => onBackToHub && onBackToHub()}
-              className="flex items-center gap-3 text-right hover:opacity-90 transition cursor-pointer"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex items-center justify-center text-amber-600 shadow-xs shrink-0">
+            <div className="flex items-center gap-3 text-right">
+              <button
+                type="button"
+                onClick={() => onBackToHub && onBackToHub()}
+                className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex items-center justify-center text-amber-600 shadow-xs shrink-0 cursor-pointer hover:opacity-90 transition"
+              >
                 <Flame className="w-5 h-5 animate-pulse" />
-              </div>
+              </button>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-serif leading-none whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => onBackToHub && onBackToHub()}
+                    className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-serif leading-none whitespace-nowrap hover:opacity-90 transition cursor-pointer"
+                  >
                     זמנים משפחתיים
-                  </h1>
+                  </button>
                   <span className="hidden sm:inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 font-serif whitespace-nowrap">
                     לוח שנה משפחתי
                   </span>
                 </div>
                 {(todayHebrewDate || todayGregorianDate) ? (
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 mt-1 whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 mt-1 whitespace-nowrap flex-wrap">
                     {todayHebrewDate && (
-                      <span className="font-serif font-bold text-amber-950 bg-amber-50/90 border border-amber-200/80 px-2 py-0.5 rounded-md">
+                      <button
+                        type="button"
+                        onClick={() => onOpenHebrewCalendarSync && onOpenHebrewCalendarSync()}
+                        className="font-serif font-bold text-amber-950 bg-amber-50/90 hover:bg-amber-100 border border-amber-200/80 px-2 py-0.5 rounded-md transition cursor-pointer"
+                        title="לחץ להוספת יומן תאריך עברי, שבתות וזמני היום ל-Google Calendar"
+                      >
                         {todayHebrewDate}
-                      </span>
+                      </button>
                     )}
                     {todayHebrewDate && todayGregorianDate && (
                       <span className="text-slate-300 font-semibold">•</span>
@@ -142,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </p>
                 )}
               </div>
-            </button>
+            </div>
 
             {/* Mobile Auth Button */}
             <div className="lg:hidden">
@@ -170,6 +182,19 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Navigation & Controls Bar - Single Uniform Height Row */}
           <div className="flex items-center gap-2 w-full lg:w-auto justify-end flex-wrap lg:flex-nowrap">
+            {/* Automatic Hebrew Date, Shabbatot, Fasts & Zmanim Calendar Button - Visible to EVERYONE (Guests & Registered Users) */}
+            {onOpenHebrewCalendarSync && (
+              <button
+                type="button"
+                onClick={onOpenHebrewCalendarSync}
+                className="h-9 inline-flex items-center gap-1.5 px-3 text-xs font-bold text-purple-950 bg-gradient-to-l from-purple-100 via-purple-50 to-indigo-50 hover:from-purple-200 hover:to-indigo-100 border border-purple-300/90 rounded-xl transition shadow-xs cursor-pointer whitespace-nowrap shrink-0"
+                title="הוסף יומן אוטומטי נפרד (בצבע שונה) של תאריך עברי יומי, שבתות ופרשת השבוע, חגים, צומות וזמני היום לבחירה"
+              >
+                <Calendar className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                <span>📅 הוסף יומן עברי וזמנים</span>
+              </button>
+            )}
+
             {/* If NOT logged in: Show clear login action */}
             {!currentUser && (
               <button

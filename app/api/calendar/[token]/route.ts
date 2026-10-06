@@ -17,6 +17,10 @@ import {
   cleanLivingMarkerFromText,
   getHalachicYahrzeitTimes,
 } from '@/lib/hebrew-calendar';
+import {
+  parseHebrewCalendarQueryParams,
+  generateHebrewCalendarIcs,
+} from '@/lib/hebrew-dates-calendar';
 
 export async function GET(
   request: NextRequest,
@@ -24,6 +28,20 @@ export async function GET(
 ) {
   const { token: rawToken } = await params;
   const token = rawToken.replace(/\.ics$/i, '');
+
+  // Public automatic Hebrew Dates, Shabbatot, Fasts, Holidays & Zmanim calendar feed (no registration required)
+  if (token === 'hebrew' || token === 'hebrew-calendar' || token === 'hebrew-dates') {
+    const hebOptions = parseHebrewCalendarQueryParams(request.nextUrl.searchParams);
+    const icsContent = generateHebrewCalendarIcs(hebOptions, request.nextUrl.origin);
+    return new NextResponse(icsContent, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
 
   const result = await DataStore.getMembershipByToken(token);
   if (!result) {

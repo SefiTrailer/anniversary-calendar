@@ -37,6 +37,7 @@ interface GoogleSyncModalProps {
   calendarName: string;
   calendarOwnerName?: string;
   onUpdateBranches: (selectedBranchIds: string[]) => Promise<void>;
+  onOpenHebrewCalendarModal?: () => void;
 }
 
 const GENERATION_CHIPS = [
@@ -59,6 +60,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   calendarName,
   calendarOwnerName,
   onUpdateBranches,
+  onOpenHebrewCalendarModal,
 }) => {
   const defaultDisplayName = useMemo(() => formatCalendarDisplayName(calendarName), [calendarName]);
   const simchaDisplayName = useMemo(() => formatSimchaCalendarDisplayName(calendarName), [calendarName]);
@@ -594,6 +596,31 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
               <p className="text-[11px] text-slate-500 text-center">
                 תיאור היומנים שיצורף אוטומטית ב-Google Calendar כולל: <strong>בעל היומן: {ownerDisplay}</strong>
               </p>
+            )}
+
+            {/* Calendar 3: Automatic Hebrew Dates, Shabbatot, Fasts, Holidays & Daily Zmanim */}
+            {onOpenHebrewCalendarModal && (
+              <div className="rounded-2xl border-2 border-purple-300 bg-gradient-to-l from-purple-50/80 via-indigo-50/50 to-white p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-100 text-purple-950 border border-purple-300">
+                    <Calendar className="w-3.5 h-3.5 text-purple-700" />
+                    <span>יומן 3 • תאריך עברי, שבתות, חגים, צומות וזמני היום (בצבע נפרד!)</span>
+                  </span>
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    רוצה גם תאריך עברי יומי, פרשת השבוע וזמני כניסת שבת, חגים, צומות וזמני היום לבחירה ביומן נפרד?
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenHebrewCalendarModal();
+                  }}
+                  className="px-4 py-2.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  📅 התאם והוסף יומן עברי וזמנים &larr;
+                </button>
+              </div>
             )}
           </div>
 
