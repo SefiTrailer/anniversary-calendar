@@ -11,28 +11,36 @@ import {
   matchesBranchHierarchyFilter,
   isPersonLiving,
   cleanLivingMarkerFromText,
+  UserTreePosition,
+  formatUserTreePositionLabel,
 } from '@/lib/hebrew-calendar';
 import { isHolocaustVictim } from '@/components/DeceasedList';
-import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame, GitBranch, Layers, Cake } from 'lucide-react';
+import { Users, Calendar, AlertCircle, Edit2, Search, Filter, Sparkles, Heart, GitCommit, Flame, GitBranch, Layers, Cake, MapPin } from 'lucide-react';
 
 interface FamilyTreeViewProps {
   deceased: DeceasedPerson[];
   branches: FamilyBranch[];
   userGeneration?: number;
+  userTreePosition?: UserTreePosition;
+  calendarOwnerName?: string;
   canEdit?: boolean;
   onEditDeceased: (deceased: DeceasedPerson) => void;
   onAddDeceased: (initialData?: Partial<DeceasedPerson>) => void;
   onOpenLineage?: (person: DeceasedPerson) => void;
+  onOpenTreePosition?: () => void;
 }
 
 export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
   deceased,
   branches,
   userGeneration = 1,
+  userTreePosition,
+  calendarOwnerName,
   canEdit = true,
   onEditDeceased,
   onAddDeceased,
   onOpenLineage,
+  onOpenTreePosition,
 }) => {
   const [selectedMainBranch, setSelectedMainBranch] = useState<string>('all');
   const [selectedGrandparentBranch, setSelectedGrandparentBranch] = useState<string>('all');
@@ -133,8 +141,30 @@ export const FamilyTreeView: React.FC<FamilyTreeViewProps> = ({
             </p>
           </div>
 
-          {/* Quick Metrics */}
+          {/* Quick Metrics & User Tree Position */}
           <div className="flex items-center gap-3 flex-wrap">
+            {onOpenTreePosition && (
+              <button
+                type="button"
+                onClick={onOpenTreePosition}
+                className="bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-xl px-3.5 py-2 text-right shadow-xs transition cursor-pointer flex items-center gap-2.5"
+                title="לחץ כדי לבחור ולהגדיר היכן אתה ממוקם בעץ המשפחה"
+              >
+                <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-[11px] text-purple-800 font-bold">
+                    היכן אני בעץ? (דור {userGeneration})
+                  </div>
+                  <div className="text-xs font-extrabold text-purple-950 max-w-[180px] truncate">
+                    {userTreePosition && userTreePosition.anchorPersonName
+                      ? formatUserTreePositionLabel(userTreePosition, calendarOwnerName)
+                      : 'לחץ להגדרת המיקום שלך בעץ'}
+                  </div>
+                </div>
+              </button>
+            )}
             <div className="bg-white/80 border border-slate-200 rounded-xl px-3.5 py-2 text-center shadow-xs">
               <div className="text-xs text-slate-500 font-medium">סך הכל בעץ</div>
               <div className="text-lg font-bold text-slate-900">{totalCount}</div>

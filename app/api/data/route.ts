@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DataStore } from '@/lib/data-store';
-import { checkDuplicateOrDiscrepancy } from '@/lib/hebrew-calendar';
+import {
+  checkDuplicateOrDiscrepancy,
+  matchesBranchHierarchyFilter,
+  getGenerationRelationInfo,
+  extractUserTreePosition,
+} from '@/lib/hebrew-calendar';
 import crypto from 'crypto';
 
 export async function GET(request: NextRequest) {
@@ -139,22 +144,58 @@ export async function GET(request: NextRequest) {
         feed_token: crypto.randomUUID(),
         selected_branch_ids: ownBranches.map(b => b.id),
       };
-      await DataStore.saveMembership(membership);
+      membership = await DataStore.saveMembership(membership);
     }
+
+    const isAdminMember = isOwner || membership.role === 'admin';
+    const rawSelected = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
+    const allOwnBranchIds = ownBranches.map(b => b.id);
+    const allowedUuidBranches = rawSelected.filter(id => allOwnBranchIds.includes(id));
+    const effectiveBranchIds =
+      !isAdminMember && allowedUuidBranches.length > 0 ? allowedUuidBranches : allOwnBranchIds;
+    const activeSubBranches = !isAdminMember
+      ? rawSelected.filter(s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:'))
+      : [];
+    const storedMaxGenToken = !isAdminMember ? rawSelected.find(s => s.startsWith('maxGen:')) : null;
+    const effectiveMaxGenStr = storedMaxGenToken ? storedMaxGenToken.replace('maxGen:', '') : null;
+    const effectiveMaxGen =
+      effectiveMaxGenStr && effectiveMaxGenStr !== 'all' ? Number(effectiveMaxGenStr) : null;
+    const userGen = membership.user_generation ?? 1;
+
+    const visibleOwnBranches = isAdminMember
+      ? ownBranches
+      : ownBranches.filter(b => effectiveBranchIds.includes(b.id));
+
+    const visibleOwnDeceased = isAdminMember
+      ? ownDeceased
+      : ownDeceased.filter(d => {
+          if (!effectiveBranchIds.includes(d.branch_id)) return false;
+          if (activeSubBranches.length > 0) {
+            const matchesSub = activeSubBranches.some(sb =>
+              matchesBranchHierarchyFilter(d, sb, ownBranches)
+            );
+            if (!matchesSub) return false;
+          }
+          if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
+            const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+            if (relGen > effectiveMaxGen) return false;
+          }
+          return true;
+        });
 
     // Also include any approved linked branches from other calendars into this user's unified calendar!
     const { linkedBranches, linkedDeceased, linkedSources } =
       await DataStore.getLinkedDeceasedAndBranchesForCalendar(calendarId, userEmail);
 
-    const combinedBranches = [...ownBranches, ...linkedBranches];
-    const combinedDeceased = [...ownDeceased];
+    const combinedBranches = [...visibleOwnBranches, ...linkedBranches];
+    const combinedDeceased = [...visibleOwnDeceased];
     for (const ld of linkedDeceased) {
       if (!combinedDeceased.some(existing => existing.id === ld.id)) {
         combinedDeceased.push(ld);
       }
     }
 
-    const members = (isOwner || membership.role === 'admin')
+    const members = isAdminMember
       ? await DataStore.getCalendarMembers(calendarId)
       : [];
 
@@ -391,14 +432,23 @@ export async function POST(request: NextRequest) {
 
         const existing = await DataStore.getUserMembership(calendarId, cleanEmail);
         const allBranches = await DataStore.getBranches(calendarId);
+        const existingTags = existing?.selected_branch_ids || [];
 
-        // Preserve any linkedToCal:... token when admin approves/updates a member!
-        const existingLinkedToken = (existing?.selected_branch_ids || []).find(s =>
-          s.startsWith('linkedToCal:')
+        // Preserve any linkedToCal:..., calName:..., skipGen:..., and tree position tokens if not explicitly provided
+        const existingLinkedToken = existingTags.find(s => s.startsWith('linkedToCal:'));
+        const existingCalNameToken = existingTags.find(s => s.startsWith('calName:'));
+        const existingSkipTokens = existingTags.filter(s => s.startsWith('skipGen:'));
+        const existingTreeTokens = existingTags.filter(
+          s =>
+            s.startsWith('userGen:') ||
+            s.startsWith('treeRelation:') ||
+            s.startsWith('treeAnchorId:') ||
+            s.startsWith('treeAnchorName:')
         );
+
         const baseBranches: string[] = (
           selectedBranchIds ||
-          existing?.selected_branch_ids ||
+          existingTags ||
           allBranches.map(b => b.id)
         ).filter(
           (s: string) =>
@@ -406,9 +456,31 @@ export async function POST(request: NextRequest) {
             !s.startsWith('reqRole:') &&
             !s.startsWith('reqNote:')
         );
-        if (existingLinkedToken && !baseBranches.includes(existingLinkedToken)) {
+
+        if (existingLinkedToken && !baseBranches.some(s => s.startsWith('linkedToCal:'))) {
           baseBranches.push(existingLinkedToken);
         }
+        if (existingCalNameToken && !baseBranches.some(s => s.startsWith('calName:'))) {
+          baseBranches.push(existingCalNameToken);
+        }
+        if (existingSkipTokens.length > 0 && !baseBranches.some(s => s.startsWith('skipGen:'))) {
+          baseBranches.push(...existingSkipTokens);
+        }
+        const hasIncomingTreeTokens = baseBranches.some(
+          s =>
+            s.startsWith('userGen:') ||
+            s.startsWith('treeRelation:') ||
+            s.startsWith('treeAnchorId:') ||
+            s.startsWith('treeAnchorName:')
+        );
+        if (!hasIncomingTreeTokens && existingTreeTokens.length > 0) {
+          baseBranches.push(...existingTreeTokens);
+        }
+
+        const extractedPos = extractUserTreePosition(
+          baseBranches,
+          existing?.user_generation ?? 1
+        );
 
         const memberRecord = {
           id: existing?.id || crypto.randomUUID(),
@@ -418,12 +490,15 @@ export async function POST(request: NextRequest) {
           role: (role || 'member') as 'admin' | 'editor' | 'member',
           feed_token: existing?.feed_token || crypto.randomUUID(),
           selected_branch_ids: baseBranches,
-          user_generation: existing?.user_generation ?? 1,
+          user_generation: extractedPos.userGeneration,
+          tree_relation: extractedPos.relationType,
+          tree_person_id: extractedPos.anchorPersonId,
+          tree_person_name: extractedPos.anchorPersonName,
         };
 
-        await DataStore.saveMembership(memberRecord);
+        const savedMember = await DataStore.saveMembership(memberRecord);
         const members = await DataStore.getCalendarMembers(calendarId);
-        return NextResponse.json({ success: true, member: memberRecord, members });
+        return NextResponse.json({ success: true, member: savedMember, members });
       }
 
       case 'remove_member': {
@@ -449,6 +524,10 @@ export async function POST(request: NextRequest) {
           userName,
           note = '',
           autoApproveIfAlreadyMember = false,
+          userGeneration,
+          treeRelation,
+          treePersonId,
+          treePersonName,
         } = payload;
 
         const cleanEmail = (userEmail || '').trim().toLowerCase();
@@ -497,6 +576,13 @@ export async function POST(request: NextRequest) {
           branchTokens.push('status:approved');
         }
 
+        const extractedPos = extractUserTreePosition(
+          branchTokens,
+          typeof userGeneration === 'number'
+            ? userGeneration
+            : existing?.user_generation ?? 1
+        );
+
         const memberRecord = {
           id: existing?.id || crypto.randomUUID(),
           calendar_id: sourceCalendarId,
@@ -509,13 +595,17 @@ export async function POST(request: NextRequest) {
             : 'member') as 'admin' | 'editor' | 'member',
           feed_token: existing?.feed_token || crypto.randomUUID(),
           selected_branch_ids: branchTokens,
-          user_generation: existing?.user_generation ?? 1,
+          user_generation: extractedPos.userGeneration,
+          tree_relation: treeRelation || extractedPos.relationType,
+          tree_person_id: treePersonId !== undefined ? treePersonId : extractedPos.anchorPersonId,
+          tree_person_name:
+            treePersonName !== undefined ? treePersonName : extractedPos.anchorPersonName,
         };
 
-        await DataStore.saveMembership(memberRecord);
+        const savedMember = await DataStore.saveMembership(memberRecord);
         return NextResponse.json({
           success: true,
-          membership: memberRecord,
+          membership: savedMember,
           status: shouldAutoApprove ? 'approved' : 'pending',
         });
       }

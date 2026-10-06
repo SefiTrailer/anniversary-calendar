@@ -2,7 +2,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { CalendarProject, UserMembership } from '@/lib/types';
-import { formatCalendarDisplayName } from '@/lib/hebrew-calendar';
+import {
+  formatCalendarDisplayName,
+  UserTreePosition,
+  formatUserTreePositionLabel,
+} from '@/lib/hebrew-calendar';
 import {
   Calendar,
   Flame,
@@ -18,6 +22,7 @@ import {
   Trash2,
   Sparkles,
   GitCommit,
+  MapPin,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -39,7 +44,9 @@ interface HeaderProps {
   isAdmin: boolean;
   canEdit?: boolean;
   userGeneration?: number;
+  userTreePosition?: UserTreePosition;
   onUpdateUserGeneration?: (gen: number) => void;
+  onOpenTreePosition?: () => void;
   todayHebrewDate?: string;
   todayGregorianDate?: string;
 }
@@ -63,7 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
   isAdmin,
   canEdit = isAdmin,
   userGeneration = 1,
+  userTreePosition,
   onUpdateUserGeneration,
+  onOpenTreePosition,
   todayHebrewDate,
   todayGregorianDate,
 }) => {
@@ -212,10 +221,29 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* Actions active ONLY when a specific calendar is open */}
                 {currentCalendar && (
                   <>
-                    {/* User Generation Selector Pill */}
-                    <div className="h-9 flex items-center bg-amber-50/90 hover:bg-amber-100/90 border border-amber-300/80 rounded-xl px-2.5 text-xs text-amber-950 shadow-2xs transition shrink-0">
-                      <GitCommit className="w-3.5 h-3.5 text-amber-700 ml-1 shrink-0" />
-                      <span className="font-semibold text-[11px] text-amber-900 ml-1 whitespace-nowrap">הדור שלי:</span>
+                    {/* User Tree Position & Generation Selector Pill */}
+                    <div className="h-9 flex items-center bg-amber-50/90 hover:bg-amber-100/90 border border-amber-300/80 rounded-xl px-2 text-xs text-amber-950 shadow-2xs transition shrink-0 gap-1">
+                      {onOpenTreePosition ? (
+                        <button
+                          type="button"
+                          onClick={onOpenTreePosition}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-purple-100/90 hover:bg-purple-200/90 text-purple-950 border border-purple-300/80 font-bold text-[11px] transition cursor-pointer"
+                          title="בחר והגדר היכן אתה ממוקם בעץ המשפחה"
+                        >
+                          <MapPin className="w-3 h-3 text-purple-700 shrink-0" />
+                          <span className="max-w-[130px] truncate">
+                            {userTreePosition && userTreePosition.anchorPersonName
+                              ? formatUserTreePositionLabel(
+                                  userTreePosition,
+                                  currentCalendar.created_by_user_name
+                                )
+                              : 'היכן אני בעץ?'}
+                          </span>
+                        </button>
+                      ) : (
+                        <GitCommit className="w-3.5 h-3.5 text-amber-700 ml-1 shrink-0" />
+                      )}
+                      <span className="font-semibold text-[11px] text-amber-900 whitespace-nowrap">דור:</span>
                       <select
                         value={userGeneration}
                         onChange={(e) => onUpdateUserGeneration && onUpdateUserGeneration(Number(e.target.value))}

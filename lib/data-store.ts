@@ -1,7 +1,29 @@
 import { supabase } from './supabase';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership, LinkedBranchSource } from './types';
-import { extractBranchHierarchy, matchesBranchHierarchyFilter, getGenerationRelationInfo } from './hebrew-calendar';
+import {
+  extractBranchHierarchy,
+  matchesBranchHierarchyFilter,
+  getGenerationRelationInfo,
+  extractUserTreePosition,
+  applyUserTreePositionToTokens,
+  getDeceasedFullName,
+  cleanLivingMarkerFromText,
+} from './hebrew-calendar';
 import crypto from 'crypto';
+
+function hydrateMembership(raw: any): UserMembership {
+  const tags: string[] = Array.isArray(raw?.selected_branch_ids) ? raw.selected_branch_ids : [];
+  const fallbackGen = typeof raw?.user_generation === 'number' ? raw.user_generation : 1;
+  const pos = extractUserTreePosition(tags, fallbackGen);
+  return {
+    ...raw,
+    selected_branch_ids: tags,
+    user_generation: pos.userGeneration,
+    tree_relation: pos.relationType,
+    tree_person_id: pos.anchorPersonId,
+    tree_person_name: pos.anchorPersonName,
+  };
+}
 
 // Fallback in-memory/file cache for development/offline
 let memoryCache: {
@@ -228,6 +250,13 @@ export const DataStore = {
         grandparentBranches: Array<{ id: string; label: string; count: number }>;
         greatGrandparentBranches: Array<{ id: string; label: string; count: number }>;
       };
+      people: Array<{
+        id: string;
+        name: string;
+        generation: number;
+        branch_id: string;
+        relationship?: string;
+      }>;
     }>
   > {
     const all = await this.getAll();
@@ -237,6 +266,16 @@ export const DataStore = {
         .map(b => ({ id: b.id, name: b.name, color: b.color }));
       const calDeceased = all.deceased.filter(d => d.calendar_id === cal.id);
       const hierarchy = extractBranchHierarchy(calDeceased, calBranches);
+
+      const people = calDeceased
+        .map(p => ({
+          id: p.id,
+          name: getDeceasedFullName(p),
+          generation: typeof p.generation === 'number' ? p.generation : 2,
+          branch_id: p.branch_id,
+          relationship: cleanLivingMarkerFromText(p.relationship),
+        }))
+        .sort((a, b) => a.generation - b.generation || a.name.localeCompare(b.name, 'he'));
 
       return {
         id: cal.id,
@@ -254,6 +293,7 @@ export const DataStore = {
             count: x.count,
           })),
         },
+        people,
       };
     });
   },
@@ -276,9 +316,11 @@ export const DataStore = {
         .from('calendar_members')
         .select('*')
         .eq('user_email', userEmail);
-      if (data) userMemberships = data as UserMembership[];
+      if (data) userMemberships = data.map((row: any) => hydrateMembership(row));
     } catch {
-      userMemberships = getCache().memberships.filter(m => m.user_email === userEmail);
+      userMemberships = getCache()
+        .memberships.filter(m => m.user_email === userEmail)
+        .map(m => hydrateMembership(m));
     }
 
     const otherMemberships = userMemberships.filter(m => m.calendar_id !== targetCalendarId);
@@ -375,13 +417,14 @@ export const DataStore = {
         .eq('user_email', userEmail)
         .maybeSingle();
 
-      if (data) return data as UserMembership;
+      if (data) return hydrateMembership(data);
     } catch {
       // fallback
     }
 
     const cache = getCache();
-    return cache.memberships.find(m => m.calendar_id === calendarId && m.user_email === userEmail) || null;
+    const found = cache.memberships.find(m => m.calendar_id === calendarId && m.user_email === userEmail);
+    return found ? hydrateMembership(found) : null;
   },
 
   async addCalendar(calendar: CalendarProject) {
@@ -596,7 +639,7 @@ export const DataStore = {
           .single();
 
         if (cal) {
-          return { membership: member as UserMembership, calendar: cal as CalendarProject };
+          return { membership: hydrateMembership(member), calendar: cal as CalendarProject };
         }
       }
 
@@ -630,7 +673,7 @@ export const DataStore = {
     if (!membership) return null;
     const calendar = cache.calendars.find(c => c.id === membership.calendar_id);
     if (!calendar) return null;
-    return { membership, calendar };
+    return { membership: hydrateMembership(membership), calendar };
   },
 
   async getCalendarMembers(calendarId: string): Promise<UserMembership[]> {
@@ -640,11 +683,13 @@ export const DataStore = {
         .select('*')
         .eq('calendar_id', calendarId)
         .order('created_at', { ascending: true });
-      if (data) return data as UserMembership[];
+      if (data) return data.map((row: any) => hydrateMembership(row));
     } catch (err) {
       console.error('Supabase getCalendarMembers error:', err);
     }
-    return getCache().memberships.filter(m => m.calendar_id === calendarId);
+    return getCache()
+      .memberships.filter(m => m.calendar_id === calendarId)
+      .map(m => hydrateMembership(m));
   },
 
   async removeMembership(calendarId: string, userEmail: string) {
@@ -664,27 +709,84 @@ export const DataStore = {
   },
 
   async saveMembership(membership: UserMembership) {
+    const rawTags = Array.isArray(membership.selected_branch_ids) ? membership.selected_branch_ids : [];
+    const parsedFromTags = extractUserTreePosition(
+      rawTags,
+      typeof membership.user_generation === 'number' ? membership.user_generation : 1
+    );
+
+    const effectivePos = {
+      userGeneration:
+        typeof membership.user_generation === 'number'
+          ? membership.user_generation
+          : parsedFromTags.userGeneration,
+      relationType: (membership.tree_relation as any) || parsedFromTags.relationType || 'general',
+      anchorPersonId:
+        membership.tree_person_id !== undefined
+          ? membership.tree_person_id
+          : parsedFromTags.anchorPersonId,
+      anchorPersonName:
+        membership.tree_person_name !== undefined
+          ? membership.tree_person_name
+          : parsedFromTags.anchorPersonName,
+    };
+
+    const updatedBranchIds = applyUserTreePositionToTokens(rawTags, effectivePos);
+
+    const dbPayload = {
+      id: membership.id || crypto.randomUUID(),
+      calendar_id: membership.calendar_id,
+      user_email: membership.user_email,
+      user_name: membership.user_name,
+      role: membership.role,
+      feed_token: membership.feed_token || crypto.randomUUID(),
+      selected_branch_ids: updatedBranchIds,
+    };
+
     try {
-      const { data } = await supabase
+      const { data: existingRow } = await supabase
         .from('calendar_members')
-        .upsert(membership, { onConflict: 'calendar_id,user_email' })
-        .select()
-        .single();
-      if (data) return data as UserMembership;
+        .select('id')
+        .eq('calendar_id', dbPayload.calendar_id)
+        .eq('user_email', dbPayload.user_email)
+        .maybeSingle();
+
+      if (existingRow?.id) {
+        const { data } = await supabase
+          .from('calendar_members')
+          .update({
+            user_name: dbPayload.user_name,
+            role: dbPayload.role,
+            feed_token: dbPayload.feed_token,
+            selected_branch_ids: dbPayload.selected_branch_ids,
+          })
+          .eq('id', existingRow.id)
+          .select()
+          .single();
+        if (data) return hydrateMembership(data);
+      } else {
+        const { data } = await supabase
+          .from('calendar_members')
+          .insert(dbPayload)
+          .select()
+          .single();
+        if (data) return hydrateMembership(data);
+      }
     } catch (err) {
       console.error('Supabase saveMembership error:', err);
     }
 
+    const hydrated = hydrateMembership(dbPayload);
     const cache = getCache();
     const idx = cache.memberships.findIndex(
-      m => m.calendar_id === membership.calendar_id && m.user_email === membership.user_email
+      m => m.calendar_id === hydrated.calendar_id && m.user_email === hydrated.user_email
     );
     if (idx !== -1) {
-      cache.memberships[idx] = membership;
+      cache.memberships[idx] = hydrated;
     } else {
-      cache.memberships.push(membership);
+      cache.memberships.push(hydrated);
     }
-    return membership;
+    return hydrated;
   },
 
   async bulkImport(

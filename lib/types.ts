@@ -67,6 +67,9 @@ export interface UserMembership {
   feed_token: string;
   selected_branch_ids: string[];
   user_generation?: number;
+  tree_relation?: string;
+  tree_person_id?: string;
+  tree_person_name?: string;
 }
 
 export interface CurrentUser {

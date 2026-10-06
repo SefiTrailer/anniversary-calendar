@@ -15,6 +15,7 @@ import { JoinBranchModal } from '@/components/JoinBranchModal';
 import { FamilyTreeView } from '@/components/FamilyTreeView';
 import { MissingDatesView } from '@/components/MissingDatesView';
 import { HebrewBirthdaysView } from '@/components/HebrewBirthdaysView';
+import { TreePositionModal } from '@/components/TreePositionModal';
 import LineageModal from '@/components/LineageModal';
 import {
   CalendarProject,
@@ -35,6 +36,10 @@ import {
   formatCalendarDescription,
   isPersonLiving,
   getHalachicYahrzeitTimes,
+  UserTreePosition,
+  extractUserTreePosition,
+  applyUserTreePositionToTokens,
+  formatUserTreePositionLabel,
 } from '@/lib/hebrew-calendar';
 import { supabase } from '@/lib/supabase';
 import { HDate } from '@hebcal/core';
@@ -66,6 +71,7 @@ import {
   Link2,
   Cake,
   Sunset,
+  MapPin,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -91,6 +97,22 @@ export default function HomePage() {
     }
     return 1;
   });
+  const [userTreePosition, setUserTreePosition] = useState<UserTreePosition>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('ner_neshama_user_tree_position');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.userGeneration === 'number') return parsed;
+          if (parsed && typeof parsed.userGen === 'number') {
+            return { ...parsed, userGeneration: parsed.userGen };
+          }
+        }
+      } catch {}
+    }
+    return { userGeneration: 1, relationType: 'general' };
+  });
+  const [isTreePositionModalOpen, setIsTreePositionModalOpen] = useState(false);
 
   // Shared View State (When opened via ?share=true&calendarId=...&branches=...)
   const [sharedViewData, setSharedViewData] = useState<{
@@ -411,11 +433,20 @@ export default function HomePage() {
         setLinkedSources(data.linkedSources || []);
         if (data.membership) {
           setMembership(data.membership);
+          const pos = extractUserTreePosition(
+            data.membership.selected_branch_ids,
+            data.membership.user_generation
+          );
           if (typeof data.membership.user_generation === 'number') {
             setUserGeneration(data.membership.user_generation);
+            setUserTreePosition(pos);
             if (typeof window !== 'undefined') {
               localStorage.setItem('ner_neshama_user_generation', String(data.membership.user_generation));
+              localStorage.setItem('ner_neshama_user_tree_position', JSON.stringify(pos));
             }
+          } else if (pos.anchorPersonName || pos.relationType !== 'general') {
+            setUserGeneration(pos.userGeneration);
+            setUserTreePosition(pos);
           }
         }
       }
@@ -727,11 +758,22 @@ export default function HomePage() {
 
   const handleUpdateUserGeneration = async (newGen: number) => {
     setUserGeneration(newGen);
+    const updatedPos: UserTreePosition = {
+      ...userTreePosition,
+      userGeneration: newGen,
+    };
+    setUserTreePosition(updatedPos);
     if (typeof window !== 'undefined') {
       localStorage.setItem('ner_neshama_user_generation', String(newGen));
+      localStorage.setItem('ner_neshama_user_tree_position', JSON.stringify(updatedPos));
     }
-    if (membership && currentCalendar) {
-      const updated = { ...membership, user_generation: newGen };
+    if (membership && (currentCalendar || sharedViewData?.calendar)) {
+      const updatedTokens = applyUserTreePositionToTokens(membership.selected_branch_ids, updatedPos);
+      const updated = {
+        ...membership,
+        user_generation: newGen,
+        selected_branch_ids: updatedTokens,
+      };
       setMembership(updated);
       try {
         await fetch('/api/data', {
@@ -745,6 +787,43 @@ export default function HomePage() {
         });
       } catch (err) {
         console.error('Failed to save user generation to membership:', err);
+      }
+    }
+  };
+
+  const handleSaveUserTreePosition = async (newPos: UserTreePosition) => {
+    setUserTreePosition(newPos);
+    setUserGeneration(newPos.userGeneration);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ner_neshama_user_generation', String(newPos.userGeneration));
+      localStorage.setItem('ner_neshama_user_tree_position', JSON.stringify(newPos));
+    }
+    if (membership && (currentCalendar || sharedViewData?.calendar)) {
+      const updatedTokens = applyUserTreePositionToTokens(membership.selected_branch_ids, newPos);
+      const updated: UserMembership = {
+        ...membership,
+        user_generation: newPos.userGeneration,
+        tree_relation: newPos.relationType,
+        tree_person_id: newPos.anchorPersonId,
+        tree_person_name: newPos.anchorPersonName,
+        selected_branch_ids: updatedTokens,
+      };
+      setMembership(updated);
+      try {
+        await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save_membership',
+            payload: { membership: updated },
+            userEmail: currentUser?.email,
+          }),
+        });
+        if (currentCalendar) {
+          await loadCalendarDetails(currentCalendar.id);
+        }
+      } catch (err) {
+        console.error('Failed to save tree position to membership:', err);
       }
     }
   };
@@ -937,7 +1016,9 @@ export default function HomePage() {
         isAdmin={isAdmin}
         canEdit={canEdit}
         userGeneration={userGeneration}
+        userTreePosition={userTreePosition}
         onUpdateUserGeneration={handleUpdateUserGeneration}
+        onOpenTreePosition={() => setIsTreePositionModalOpen(true)}
         todayHebrewDate={todayHebrewDate}
         todayGregorianDate={todayGregorianDate}
       />
@@ -966,7 +1047,19 @@ export default function HomePage() {
                   {canEdit ? '✏️ הרשאת עריכה פעילה' : '👁️ צפייה בלבד'}
                 </span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsTreePositionModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>
+                    {userTreePosition.anchorPersonName
+                      ? `המיקום שלי בעץ: ${formatUserTreePositionLabel(userTreePosition, sharedViewData.calendar.created_by_user_name)}`
+                      : 'היכן אני מוגדר בעץ?'}
+                  </span>
+                </button>
                 {!currentUser && (
                   <button
                     onClick={() => setIsAuthModalOpen(true)}
@@ -2376,6 +2469,8 @@ export default function HomePage() {
                 deceased={deceased}
                 branches={branches}
                 userGeneration={userGeneration}
+                userTreePosition={userTreePosition}
+                calendarOwnerName={currentCalendar.created_by_user_name}
                 canEdit={canEdit}
                 onEditDeceased={(person) => {
                   setEditingDeceased(person);
@@ -2388,6 +2483,7 @@ export default function HomePage() {
                   setIsAddModalOpen(true);
                 }}
                 onOpenLineage={setLineagePerson}
+                onOpenTreePosition={() => setIsTreePositionModalOpen(true)}
               />
             )}
 
@@ -2546,7 +2642,30 @@ export default function HomePage() {
         person={lineagePerson}
         currentUser={currentUser}
         userGeneration={userGeneration}
+        userTreePosition={userTreePosition}
+        onOpenTreePosition={() => setIsTreePositionModalOpen(true)}
       />
+
+      {(currentCalendar || sharedViewData?.calendar) && (
+        <TreePositionModal
+          isOpen={isTreePositionModalOpen}
+          onClose={() => setIsTreePositionModalOpen(false)}
+          deceased={currentCalendar ? deceased : (sharedViewData?.deceased || [])}
+          branches={currentCalendar ? branches : (sharedViewData?.branches || [])}
+          calendarOwnerName={
+            (currentCalendar || sharedViewData?.calendar)?.created_by_user_name || 'בעל היומן'
+          }
+          currentPosition={userTreePosition}
+          canEdit={canEdit}
+          onSavePosition={handleSaveUserTreePosition}
+          onOpenAddSelfToTree={() => {
+            setEditingDeceased(null);
+            setDefaultModalIsLiving(true);
+            setDefaultModalSimchaType('birthday');
+            setIsAddModalOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }

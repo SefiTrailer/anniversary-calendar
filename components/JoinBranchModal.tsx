@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { CalendarProject } from '@/lib/types';
-import { formatCalendarDisplayName } from '@/lib/hebrew-calendar';
+import {
+  formatCalendarDisplayName,
+  TREE_RELATION_OPTIONS,
+  TreeRelationType,
+  calculateUserGenFromAnchor,
+} from '@/lib/hebrew-calendar';
 import {
   X,
   GitBranch,
@@ -15,6 +20,7 @@ import {
   Edit3,
   Sparkles,
   Users,
+  MapPin,
 } from 'lucide-react';
 
 interface DirectoryCalendar {
@@ -29,6 +35,13 @@ interface DirectoryCalendar {
     grandparentBranches: Array<{ id: string; label: string; count: number }>;
     greatGrandparentBranches: Array<{ id: string; label: string; count: number }>;
   };
+  people?: Array<{
+    id: string;
+    name: string;
+    generation: number;
+    branch_id: string;
+    relationship?: string;
+  }>;
 }
 
 interface JoinBranchModalProps {
@@ -65,6 +78,12 @@ export const JoinBranchModal: React.FC<JoinBranchModalProps> = ({
   const [targetCalendarId, setTargetCalendarId] = useState<string>('');
   const [requestedRole, setRequestedRole] = useState<'member' | 'editor'>('member');
   const [note, setNote] = useState('');
+
+  // Tree position state for the joining user
+  const [treeRelation, setTreeRelation] = useState<TreeRelationType>('general');
+  const [treeAnchorId, setTreeAnchorId] = useState<string>('');
+  const [userGen, setUserGen] = useState<number>(1);
+  const [personFilterQuery, setPersonFilterQuery] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [resultMessage, setResultMessage] = useState<{
@@ -139,11 +158,53 @@ export const JoinBranchModal: React.FC<JoinBranchModalProps> = ({
     [directory, selectedSourceCalId]
   );
 
+  const selectedAnchorPerson = useMemo(() => {
+    if (!selectedSourceCal?.people || !treeAnchorId) return null;
+    return selectedSourceCal.people.find((p) => p.id === treeAnchorId) || null;
+  }, [selectedSourceCal, treeAnchorId]);
+
+  const filteredSourcePeople = useMemo(() => {
+    const list = selectedSourceCal?.people || [];
+    const q = personFilterQuery.trim().toLowerCase();
+    return list
+      .filter((p) => {
+        if (selectedBranchUuids.length > 0 && !selectedBranchUuids.includes(p.branch_id)) {
+          return false;
+        }
+        if (!q) return true;
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.relationship || '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => (a.generation || 2) - (b.generation || 2));
+  }, [selectedSourceCal, selectedBranchUuids, personFilterQuery]);
+
   const handleSelectSourceCal = (cal: DirectoryCalendar) => {
     setSelectedSourceCalId(cal.id);
     setSelectedBranchUuids(cal.branches.map((b) => b.id));
     setSelectedSubBranch('all');
     setMaxGenerations('all');
+    setTreeAnchorId('');
+  };
+
+  const handleRelationTypeChange = (rel: TreeRelationType) => {
+    setTreeRelation(rel);
+    if (rel === 'general') {
+      setTreeAnchorId('');
+    } else if (selectedAnchorPerson) {
+      setUserGen(calculateUserGenFromAnchor(selectedAnchorPerson.generation || 2, rel));
+    }
+  };
+
+  const handleSelectAnchorPerson = (personId: string) => {
+    setTreeAnchorId(personId);
+    const p = selectedSourceCal?.people?.find((x) => x.id === personId);
+    if (p) {
+      const effectiveRel = treeRelation === 'general' ? 'child_of' : treeRelation;
+      if (treeRelation === 'general') setTreeRelation('child_of');
+      setUserGen(calculateUserGenFromAnchor(p.generation || 2, effectiveRel));
+    }
   };
 
   const toggleBranchUuid = (id: string) => {
@@ -170,7 +231,27 @@ export const JoinBranchModal: React.FC<JoinBranchModalProps> = ({
         ...selectedBranchUuids,
         ...(selectedSubBranch !== 'all' ? [selectedSubBranch] : []),
         ...(maxGenerations !== 'all' ? [`maxGen:${maxGenerations}`] : []),
+        `userGen:${userGen}`,
+        ...(treeRelation !== 'general' ? [`treeRelation:${treeRelation}`] : []),
+        ...(selectedAnchorPerson ? [`treeAnchorId:${selectedAnchorPerson.id}`] : []),
+        ...(selectedAnchorPerson
+          ? [`treeAnchorName:${selectedAnchorPerson.name.replace(/:/g, ' ')}`]
+          : []),
       ];
+
+      // Save locally as well so the joining user's view immediately reflects their tree position
+      try {
+        localStorage.setItem('ner_neshama_user_gen', String(userGen));
+        localStorage.setItem(
+          'ner_neshama_user_tree_position',
+          JSON.stringify({
+            userGen,
+            relationType: treeRelation,
+            anchorPersonId: selectedAnchorPerson?.id,
+            anchorPersonName: selectedAnchorPerson?.name,
+          })
+        );
+      } catch {}
 
       const res = await fetch('/api/data', {
         method: 'POST',
@@ -186,6 +267,10 @@ export const JoinBranchModal: React.FC<JoinBranchModalProps> = ({
             userName: currentUser.name,
             note,
             autoApproveIfAlreadyMember,
+            userGeneration: userGen,
+            treeRelation,
+            treeAnchorId: selectedAnchorPerson?.id,
+            treeAnchorName: selectedAnchorPerson?.name,
           },
         }),
       });
@@ -424,6 +509,88 @@ export const JoinBranchModal: React.FC<JoinBranchModalProps> = ({
                     <option value="6">עד 6 דורות מהעץ</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Tree Position Definition for Joining User */}
+              <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-200/80 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-extrabold text-purple-950 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>היכן אתה מוגדר בעץ המשפחה? (לחישוב קרבה מדויק של כל הדורות אליך)</span>
+                  </label>
+                  <span className="px-2 py-0.5 rounded-md bg-white border border-purple-200 text-[10px] font-black text-purple-900 shrink-0">
+                    הדור שלך: {userGen}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                      בחר את סוג הקרבה שלך בעץ:
+                    </label>
+                    <select
+                      value={treeRelation}
+                      onChange={(e) => handleRelationTypeChange(e.target.value as TreeRelationType)}
+                      className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
+                    >
+                      {TREE_RELATION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {treeRelation !== 'general' && (selectedSourceCal.people?.length || 0) > 0 ? (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        בחר את האדם בעץ שאליו מתייחסת הקרבה:
+                      </label>
+                      <select
+                        value={treeAnchorId}
+                        onChange={(e) => handleSelectAnchorPerson(e.target.value)}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
+                      >
+                        <option value="">-- בחר בן משפחה מהעץ --</option>
+                        {filteredSourcePeople.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} (דור {p.generation || 2}
+                            {p.relationship ? ` • ${p.relationship}` : ''})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        בחר את הדור שלך בעץ ביחס ל{selectedSourceCal.created_by_user_name || 'בעל היומן'}:
+                      </label>
+                      <select
+                        value={userGen}
+                        onChange={(e) => setUserGen(Number(e.target.value))}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200 rounded-xl px-2.5 py-2 cursor-pointer outline-none"
+                      >
+                        <option value={1}>דור 1 — אותו דור כמו {selectedSourceCal.created_by_user_name || 'בעל היומן'} (אח/אחות/בן דוד)</option>
+                        <option value={0}>דור 0 — דור הילדים / אחיינים של {selectedSourceCal.created_by_user_name || 'בעל היומן'}</option>
+                        <option value={-1}>דור -1 — דור הנכדים של {selectedSourceCal.created_by_user_name || 'בעל היומן'}</option>
+                        <option value={-2}>דור -2 — דור הנינים של {selectedSourceCal.created_by_user_name || 'בעל היומן'}</option>
+                        <option value={2}>דור 2 — דור ההורים / דודים של {selectedSourceCal.created_by_user_name || 'בעל היומן'}</option>
+                        <option value={3}>דור 3 — דור הסבים והסבתות</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {selectedAnchorPerson && treeRelation !== 'general' && (
+                  <p className="text-[11px] font-bold text-purple-900 bg-white/80 border border-purple-200/80 rounded-xl px-2.5 py-1.5">
+                    📍 המיקום שלך בעץ הוגדר:{' '}
+                    <span className="text-purple-700">
+                      {TREE_RELATION_OPTIONS.find((o) => o.value === treeRelation)?.shortPrefix}{' '}
+                      {selectedAnchorPerson.name}
+                    </span>{' '}
+                    (מחושב כדור {userGen} בעץ — ניתן לשנות בכל עת גם מתוך תצוגת העץ).
+                  </p>
+                )}
               </div>
             </div>
           )}

@@ -1300,5 +1300,182 @@ export function formatCalendarDescription(
   return 'לוח שנה משפחתי מתעדכן אוטומטית';
 }
 
+export type TreeRelationType =
+  | 'self'
+  | 'child_of'
+  | 'grandchild_of'
+  | 'great_grandchild_of'
+  | 'sibling_of'
+  | 'cousin_of'
+  | 'spouse_of'
+  | 'nephew_of'
+  | 'general';
 
+export interface UserTreePosition {
+  userGeneration: number;
+  relationType: TreeRelationType;
+  anchorPersonId?: string;
+  anchorPersonName?: string;
+}
 
+export const TREE_RELATION_OPTIONS: Array<{
+  value: TreeRelationType;
+  label: string;
+  shortPrefix: string;
+  genOffset: number;
+  needsAnchor: boolean;
+}> = [
+  {
+    value: 'child_of',
+    label: 'אני בן / בת של דמות בעץ',
+    shortPrefix: 'בן/בת של',
+    genOffset: -1,
+    needsAnchor: true,
+  },
+  {
+    value: 'grandchild_of',
+    label: 'אני נכד / נכדה של דמות בעץ',
+    shortPrefix: 'נכד/ה של',
+    genOffset: -2,
+    needsAnchor: true,
+  },
+  {
+    value: 'great_grandchild_of',
+    label: 'אני נין / נינה של דמות בעץ',
+    shortPrefix: 'נין/ה של',
+    genOffset: -3,
+    needsAnchor: true,
+  },
+  {
+    value: 'sibling_of',
+    label: 'אני אח / אחות של דמות בעץ',
+    shortPrefix: 'אח/אחות של',
+    genOffset: 0,
+    needsAnchor: true,
+  },
+  {
+    value: 'cousin_of',
+    label: 'אני בן דוד / בת דודה של דמות בעץ',
+    shortPrefix: 'בן/בת דוד של',
+    genOffset: 0,
+    needsAnchor: true,
+  },
+  {
+    value: 'nephew_of',
+    label: 'אני אחיין / אחיינית של דמות בעץ',
+    shortPrefix: 'אחיין/אחיינית של',
+    genOffset: -1,
+    needsAnchor: true,
+  },
+  {
+    value: 'spouse_of',
+    label: 'אני בן / בת זוג של דמות בעץ',
+    shortPrefix: 'בן/בת זוג של',
+    genOffset: 0,
+    needsAnchor: true,
+  },
+  {
+    value: 'self',
+    label: 'אני עצמי מופיע/ה בעץ בתור...',
+    shortPrefix: 'מופיע/ה בעץ:',
+    genOffset: 0,
+    needsAnchor: true,
+  },
+  {
+    value: 'general',
+    label: 'בחירת דור כללית בעץ (ביחס לבעל היומן)',
+    shortPrefix: 'דור בעץ:',
+    genOffset: 0,
+    needsAnchor: false,
+  },
+];
+
+export function calculateUserGenFromAnchor(
+  anchorGeneration: number | undefined | null,
+  relationType: TreeRelationType
+): number {
+  const baseGen =
+    typeof anchorGeneration === 'number' && !isNaN(anchorGeneration) ? anchorGeneration : 2;
+  const opt = TREE_RELATION_OPTIONS.find((o) => o.value === relationType);
+  const offset = opt ? opt.genOffset : 0;
+  return baseGen + offset;
+}
+
+export function extractUserTreePosition(
+  selectedBranchIds?: string[] | null,
+  fallbackUserGen: number = 1
+): UserTreePosition {
+  const tokens = Array.isArray(selectedBranchIds) ? selectedBranchIds : [];
+  const genToken = tokens.find((t) => t.startsWith('userGen:'));
+  const relToken = tokens.find((t) => t.startsWith('treeRelation:'));
+  const idToken = tokens.find((t) => t.startsWith('treeAnchorId:'));
+  const nameToken = tokens.find((t) => t.startsWith('treeAnchorName:'));
+
+  const parsedGen = genToken ? Number(genToken.replace('userGen:', '').trim()) : NaN;
+  const userGeneration = !isNaN(parsedGen) ? parsedGen : fallbackUserGen;
+
+  const rawRel = relToken ? relToken.replace('treeRelation:', '').trim() : '';
+  const validRel = TREE_RELATION_OPTIONS.some((o) => o.value === rawRel)
+    ? (rawRel as TreeRelationType)
+    : idToken || nameToken
+    ? 'child_of'
+    : 'general';
+
+  const anchorPersonId = idToken ? idToken.replace('treeAnchorId:', '').trim() : undefined;
+  const anchorPersonName = nameToken ? nameToken.replace('treeAnchorName:', '').trim() : undefined;
+
+  return {
+    userGeneration,
+    relationType: validRel,
+    anchorPersonId: anchorPersonId || undefined,
+    anchorPersonName: anchorPersonName || undefined,
+  };
+}
+
+export function applyUserTreePositionToTokens(
+  existingTokens: string[] | undefined | null,
+  pos: UserTreePosition
+): string[] {
+  const clean = (Array.isArray(existingTokens) ? existingTokens : []).filter(
+    (t) =>
+      !t.startsWith('userGen:') &&
+      !t.startsWith('treeRelation:') &&
+      !t.startsWith('treeAnchorId:') &&
+      !t.startsWith('treeAnchorName:')
+  );
+  clean.push(`userGen:${pos.userGeneration}`);
+  clean.push(`treeRelation:${pos.relationType}`);
+  if (pos.relationType !== 'general' && pos.anchorPersonId) {
+    clean.push(`treeAnchorId:${pos.anchorPersonId}`);
+  }
+  if (pos.relationType !== 'general' && pos.anchorPersonName) {
+    clean.push(`treeAnchorName:${pos.anchorPersonName.slice(0, 80)}`);
+  }
+  return clean;
+}
+
+export function formatUserTreePositionLabel(
+  pos?: UserTreePosition | null,
+  ownerName?: string | null
+): string {
+  const effectiveGen = pos?.userGeneration ?? 1;
+  const genLabels: Record<number, string> = {
+    4: 'דור 4 (סבא-רבא / סבתא-רבתא)',
+    3: 'דור 3 (סבא / סבתא)',
+    2: 'דור 2 (הורים ודודים)',
+    1: `דור 1 (הדור של ${ownerName ? ownerName.split(' ')[0] : 'בעל היומן'})`,
+    0: 'דור 0 (ילדים / אחיינים)',
+    [-1]: 'דור 1- (נכדים)',
+    [-2]: 'דור 2- (נינים)',
+    [-3]: 'דור 3- (בני נינים)',
+  };
+  const genText = genLabels[effectiveGen] || `דור ${effectiveGen}`;
+
+  if (pos && pos.relationType !== 'general' && pos.anchorPersonName) {
+    const opt = TREE_RELATION_OPTIONS.find((o) => o.value === pos.relationType);
+    const prefix = opt ? opt.shortPrefix : 'קרוב/ה של';
+    return `${prefix} ${pos.anchorPersonName} (${genText})`;
+  }
+
+  return genText;
+}

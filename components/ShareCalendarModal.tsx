@@ -18,6 +18,8 @@ import {
   RefreshCw,
   GitBranch,
   GitCommit,
+  MapPin,
+  Settings2,
 } from 'lucide-react';
 import { CalendarProject, FamilyBranch, DeceasedPerson, UserMembership } from '@/lib/types';
 import {
@@ -25,6 +27,8 @@ import {
   matchesBranchHierarchyFilter,
   getGenerationRelationInfo,
   formatCalendarDisplayName,
+  extractUserTreePosition,
+  formatUserTreePositionLabel,
 } from '@/lib/hebrew-calendar';
 
 interface ShareCalendarModalProps {
@@ -72,8 +76,20 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberRole, setNewMemberRole] = useState<'member' | 'editor'>('editor');
+  const [inviteBranchIds, setInviteBranchIds] = useState<string[]>(() => branches.map((b) => b.id));
+  const [inviteSubBranch, setInviteSubBranch] = useState<string>('all');
+  const [inviteMaxGen, setInviteMaxGen] = useState<string>('all');
   const [savingMember, setSavingMember] = useState(false);
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
+
+  // Inline member branch permission editor state (for already-approved or pending members)
+  const [editingMemberEmail, setEditingMemberEmail] = useState<string | null>(null);
+  const [editBranchIds, setEditBranchIds] = useState<string[]>([]);
+  const [editSubBranch, setEditSubBranch] = useState<string>('all');
+  const [editMaxGen, setEditMaxGen] = useState<string>('all');
+  const [editRole, setEditRole] = useState<'member' | 'editor'>('member');
+  const [savingEditEmail, setSavingEditEmail] = useState<string | null>(null);
+  const [savedMemberEmail, setSavedMemberEmail] = useState<string | null>(null);
 
   const branchHierarchy = useMemo(
     () => extractBranchHierarchy(deceased, branches),
@@ -84,6 +100,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
   React.useEffect(() => {
     if (branches.length > 0) {
       setSelectedBranchIds(branches.map((b) => b.id));
+      setInviteBranchIds(branches.map((b) => b.id));
     }
   }, [branches]);
 
@@ -210,15 +227,105 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
     window.open(waUrl, '_blank');
   };
 
+  const toggleInviteBranch = (id: string) => {
+    setInviteBranchIds((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((bId) => bId !== id);
+      }
+      return [...prev, id];
+    });
+  };
+
+  const toggleEditBranch = (id: string) => {
+    setEditBranchIds((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((bId) => bId !== id);
+      }
+      return [...prev, id];
+    });
+  };
+
+  const startEditMember = (m: UserMembership) => {
+    if (editingMemberEmail === m.user_email) {
+      setEditingMemberEmail(null);
+      return;
+    }
+    const tags = m.selected_branch_ids || [];
+    const validBranchUuidSet = new Set(branches.map((b) => b.id));
+    const currentMemberBranchUuids = tags.filter((t) => validBranchUuidSet.has(t));
+    setEditBranchIds(
+      currentMemberBranchUuids.length > 0 ? currentMemberBranchUuids : branches.map((b) => b.id)
+    );
+    const subTag = tags.find(
+      (t) => t.startsWith('gen2:') || t.startsWith('gen3:') || t.startsWith('gen4:')
+    );
+    setEditSubBranch(subTag || 'all');
+    const maxGenTag = tags.find((t) => t.startsWith('maxGen:'));
+    setEditMaxGen(maxGenTag ? maxGenTag.replace('maxGen:', '') : 'all');
+    const reqRoleTag = tags.find((t) => t.startsWith('reqRole:'));
+    const defaultRole =
+      m.role === 'editor' || reqRoleTag === 'reqRole:editor' ? 'editor' : 'member';
+    setEditRole(defaultRole);
+    setEditingMemberEmail(m.user_email);
+  };
+
+  const handleSaveMemberBranchPermissions = async (
+    m: UserMembership,
+    overrideRole?: 'member' | 'editor'
+  ) => {
+    if (!onManageMember) return;
+    setSavingEditEmail(m.user_email);
+    try {
+      const validBranchUuidSet = new Set(branches.map((b) => b.id));
+      const existingTags = m.selected_branch_ids || [];
+      // Preserve metadata tags such as targetCal:, userGen:, treeRelation:, treeAnchorId:, treeAnchorName:, reqNote:
+      const preservedMetaTags = existingTags.filter(
+        (t) =>
+          !validBranchUuidSet.has(t) &&
+          t !== 'status:pending' &&
+          !t.startsWith('reqRole:') &&
+          !t.startsWith('maxGen:') &&
+          !t.startsWith('gen2:') &&
+          !t.startsWith('gen3:') &&
+          !t.startsWith('gen4:')
+      );
+
+      const finalBranchIds = [
+        ...(editBranchIds.length > 0 ? editBranchIds : branches.map((b) => b.id)),
+        ...(editSubBranch !== 'all' ? [editSubBranch] : []),
+        ...(editMaxGen !== 'all' ? [`maxGen:${editMaxGen}`] : []),
+        ...preservedMetaTags,
+      ];
+
+      await onManageMember(
+        m.user_email,
+        m.user_name,
+        overrideRole || editRole,
+        finalBranchIds
+      );
+      setEditingMemberEmail(null);
+      setSavedMemberEmail(m.user_email);
+      setTimeout(() => setSavedMemberEmail(null), 3000);
+    } catch (err) {
+      console.error('Failed to update member branch permissions:', err);
+    } finally {
+      setSavingEditEmail(null);
+    }
+  };
+
   const handleAddOrUpdateMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onManageMember || !newMemberEmail.trim()) return;
     setSavingMember(true);
     setMemberMessage(null);
     try {
-      const payloadBranches = [...selectedBranchIds];
-      if (selectedSubBranch !== 'all') payloadBranches.push(selectedSubBranch);
-      if (maxGen !== 'all') payloadBranches.push(`maxGen:${maxGen}`);
+      const payloadBranches = [
+        ...(inviteBranchIds.length > 0 ? inviteBranchIds : branches.map((b) => b.id)),
+      ];
+      if (inviteSubBranch !== 'all') payloadBranches.push(inviteSubBranch);
+      if (inviteMaxGen !== 'all') payloadBranches.push(`maxGen:${inviteMaxGen}`);
 
       await onManageMember(
         newMemberEmail.trim().toLowerCase(),
@@ -228,7 +335,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
       );
       setNewMemberEmail('');
       setNewMemberName('');
-      setMemberMessage('הרשאת המשתמש נשמרה ועודכנה בהצלחה!');
+      setMemberMessage('הרשאת המשתמש והענפים נשמרו ועודכנו בהצלחה!');
       setTimeout(() => setMemberMessage(null), 3500);
     } catch (err: any) {
       setMemberMessage(err.message || 'שגיאה בעדכון הרשאות');
@@ -742,28 +849,44 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                           ? branchHierarchy.allNodesById[subBranchTag]?.label ||
                             subBranchTag.split(':').pop()
                           : null;
+                        const maxGenTag = tags.find((t) => t.startsWith('maxGen:'));
+                        const maxGenVal = maxGenTag ? maxGenTag.replace('maxGen:', '') : null;
                         const targetCalTag = tags.find((t) => t.startsWith('targetCal:'));
                         const requestedBranchNames = branches
                           .filter((b) => tags.includes(b.id))
                           .map((b) => b.name);
+                        const treePos = extractUserTreePosition(tags, m.user_generation);
+                        const hasCustomTreePos =
+                          tags.some((t) => t.startsWith('treeRelation:') || t.startsWith('userGen:')) ||
+                          Boolean(m.tree_relation || m.tree_person_name);
+                        const isEditingThis = editingMemberEmail === m.user_email;
 
                         return (
                           <div
                             key={m.id || m.user_email}
-                            className="p-3 rounded-xl bg-white border border-amber-200 space-y-2 text-xs shadow-2xs"
+                            className="p-3 rounded-xl bg-white border border-amber-200 space-y-2.5 text-xs shadow-2xs"
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div>
+                              <div className="space-y-0.5">
                                 <span className="font-bold text-slate-900 block">
                                   {m.user_name} ({m.user_email})
                                 </span>
-                                <span className="text-[11px] text-indigo-800 font-semibold block mt-0.5">
+                                <span className="text-[11px] text-indigo-800 font-semibold block">
                                   מבקש להצטרף ל:{' '}
                                   {requestedBranchNames.length > 0
                                     ? requestedBranchNames.join(' • ')
                                     : 'כל הענפים'}
                                   {subBranchLabel ? ` (${subBranchLabel})` : ''}
+                                  {maxGenVal ? ` • עד דור ${maxGenVal}` : ''}
                                 </span>
+                                {hasCustomTreePos && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md font-bold mt-0.5">
+                                    <MapPin className="w-3 h-3 text-purple-600 shrink-0" />
+                                    <span>
+                                      מיקום בעץ: {formatUserTreePositionLabel(treePos, calendar.created_by_user_name)}
+                                    </span>
+                                  </span>
+                                )}
                                 {targetCalTag && (
                                   <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">
                                     🔗 ביקש למזג את הענף לתוך היומן האישי שלו
@@ -780,45 +903,132 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                               </span>
                             </div>
 
+                            {isEditingThis && (
+                              <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-2.5">
+                                <span className="text-[11px] font-extrabold text-indigo-950 block">
+                                  🌿 התאם אילו ענפים ותתי-ענפים לאשר עבור {m.user_name}:
+                                </span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                  {branches.map((b) => {
+                                    const checked = editBranchIds.includes(b.id);
+                                    return (
+                                      <button
+                                        key={b.id}
+                                        type="button"
+                                        onClick={() => toggleEditBranch(b.id)}
+                                        className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+                                          checked
+                                            ? 'bg-white border-indigo-500 text-indigo-950 shadow-2xs'
+                                            : 'bg-white/60 border-slate-200 text-slate-500'
+                                        }`}
+                                      >
+                                        <span className="flex items-center gap-1.5 truncate">
+                                          <span
+                                            className="w-2 h-2 rounded-full shrink-0"
+                                            style={{ backgroundColor: b.color || '#2563eb' }}
+                                          />
+                                          <span className="truncate">{b.name}</span>
+                                        </span>
+                                        <span>{checked ? '✓' : ''}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <select
+                                    value={editSubBranch}
+                                    onChange={(e) => setEditSubBranch(e.target.value)}
+                                    className="text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
+                                  >
+                                    <option value="all">כל תתי-הענפים בענפים שנבחרו</option>
+                                    {branchHierarchy.mainBranches.map((mb) => (
+                                      <option key={mb.id} value={mb.id}>
+                                        דור 2: {mb.shortLabel}
+                                      </option>
+                                    ))}
+                                    {branchHierarchy.grandparentBranches.map((gp) => (
+                                      <option key={gp.id} value={gp.id}>
+                                        דור 3: {gp.shortLabel}
+                                      </option>
+                                    ))}
+                                    {branchHierarchy.greatGrandparentBranches.map((ggp) => (
+                                      <option key={ggp.id} value={ggp.id}>
+                                        דור 4: {ggp.shortLabel}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={editMaxGen}
+                                    onChange={(e) => setEditMaxGen(e.target.value)}
+                                    className="text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
+                                  >
+                                    <option value="all">כל הדורות בענף</option>
+                                    <option value="2">עד דור 2</option>
+                                    <option value="3">עד דור 3</option>
+                                    <option value="4">עד דור 4</option>
+                                    <option value="5">עד דור 5</option>
+                                    <option value="6">עד דור 6</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+
                             {isAdmin && onManageMember && (
-                              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100 flex-wrap">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    onManageMember(
-                                      m.user_email,
-                                      m.user_name,
-                                      'member',
-                                      tags.filter((t) => t !== 'status:pending')
-                                    )
-                                  }
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer"
+                                  onClick={() => startEditMember(m)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold text-[11px] transition cursor-pointer"
                                 >
-                                  ✓ אשר (צפייה בלבד)
+                                  <Settings2 className="w-3.5 h-3.5" />
+                                  <span>{isEditingThis ? 'סגור בחירת ענפים' : 'התאם ענפים'}</span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onManageMember(
-                                      m.user_email,
-                                      m.user_name,
-                                      'editor',
-                                      tags.filter((t) => t !== 'status:pending')
-                                    )
-                                  }
-                                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition cursor-pointer"
-                                >
-                                  ✏️ אשר (עם עריכה)
-                                </button>
-                                {onRemoveMember && (
+
+                                <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => onRemoveMember(m.user_email)}
-                                    className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] transition cursor-pointer"
+                                    disabled={savingEditEmail === m.user_email}
+                                    onClick={() =>
+                                      isEditingThis
+                                        ? handleSaveMemberBranchPermissions(m, 'member')
+                                        : onManageMember(
+                                            m.user_email,
+                                            m.user_name,
+                                            'member',
+                                            tags.filter((t) => t !== 'status:pending')
+                                          )
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer"
                                   >
-                                    דחה
+                                    ✓ אשר (צפייה בלבד)
                                   </button>
-                                )}
+                                  <button
+                                    type="button"
+                                    disabled={savingEditEmail === m.user_email}
+                                    onClick={() =>
+                                      isEditingThis
+                                        ? handleSaveMemberBranchPermissions(m, 'editor')
+                                        : onManageMember(
+                                            m.user_email,
+                                            m.user_name,
+                                            'editor',
+                                            tags.filter((t) => t !== 'status:pending')
+                                          )
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition cursor-pointer"
+                                  >
+                                    ✏️ אשר (עם עריכה)
+                                  </button>
+                                  {onRemoveMember && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onRemoveMember(m.user_email)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] transition cursor-pointer"
+                                    >
+                                      דחה
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -839,10 +1049,15 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                   <span className="text-xs font-extrabold text-slate-900">
                     ✅ משתמשים ובני משפחה המחוברים ליומן ({approvedMembers.length}):
                   </span>
+                  {isAdmin && approvedMembers.length > 1 && (
+                    <span className="text-[10px] font-bold text-indigo-700">
+                      ניתן לעדכן הרשאות גישה לענפים לכל משתמש בכל עת
+                    </span>
+                  )}
                 </div>
 
                 {approvedMembers.length > 0 ? (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                     {approvedMembers.map((m) => {
                       const isOwnerMember =
                         m.user_email === calendar.created_by_user_id || m.role === 'admin';
@@ -857,87 +1072,278 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                         ? branchHierarchy.allNodesById[subBranchTag]?.shortLabel ||
                           subBranchTag.split(':').pop()
                         : null;
+                      const maxGenTag = tags.find((t) => t.startsWith('maxGen:'));
+                      const maxGenVal = maxGenTag ? maxGenTag.replace('maxGen:', '') : null;
                       const isMergedToPersonalCal = tags.some((t) => t.startsWith('targetCal:'));
+                      const treePos = extractUserTreePosition(tags, m.user_generation);
+                      const hasCustomTreePos =
+                        tags.some((t) => t.startsWith('treeRelation:') || t.startsWith('userGen:')) ||
+                        Boolean(m.tree_relation || m.tree_person_name);
+                      const isEditingThis = editingMemberEmail === m.user_email;
+                      const isSavedThis = savedMemberEmail === m.user_email;
 
                       return (
                         <div
                           key={m.id || m.user_email}
-                          className="flex items-center justify-between gap-2 p-3 rounded-xl bg-white border border-slate-200 text-xs shadow-2xs"
+                          className={`p-3 rounded-xl bg-white border transition text-xs shadow-2xs space-y-2.5 ${
+                            isEditingThis
+                              ? 'border-indigo-400 ring-1 ring-indigo-400/30'
+                              : 'border-slate-200'
+                          }`}
                         >
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-slate-900 truncate">
-                                {m.user_name}
-                              </span>
-                              {isOwnerMember && (
-                                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                                  בעל היומן
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-900 truncate">
+                                  {m.user_name}
                                 </span>
+                                {isOwnerMember && (
+                                  <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                    בעל היומן
+                                  </span>
+                                )}
+                                {isMergedToPersonalCal && (
+                                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                    🔗 משולב גם ביומן האישי
+                                  </span>
+                                )}
+                                {isSavedThis && (
+                                  <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold">
+                                    ✓ הרשאות הענפים עודכנו!
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-500 block truncate">
+                                {m.user_email}
+                              </span>
+                              {!isOwnerMember && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                  <span className="text-[10px] text-indigo-800 bg-indigo-50/80 border border-indigo-200/80 px-2 py-0.5 rounded-md font-bold">
+                                    🌿 ענפים:{' '}
+                                    {memberBranches.length > 0 && memberBranches.length < branches.length
+                                      ? memberBranches.join(' • ')
+                                      : 'כל הענפים'}
+                                    {subBranchLabel ? ` (${subBranchLabel})` : ''}
+                                    {maxGenVal ? ` • עד דור ${maxGenVal}` : ''}
+                                  </span>
+                                  {hasCustomTreePos && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md font-bold">
+                                      <MapPin className="w-3 h-3 text-purple-600 shrink-0" />
+                                      <span>
+                                        {formatUserTreePositionLabel(treePos, calendar.created_by_user_name)}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
                               )}
-                              {isMergedToPersonalCal && (
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                  🔗 משולב גם ביומן האישי
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                              {isOwnerMember ? (
+                                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                  מנהל ראשי
+                                </span>
+                              ) : isAdmin && onManageMember ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditMember(m)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                                      isEditingThis
+                                        ? 'bg-indigo-600 text-white border-indigo-600'
+                                        : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                                    }`}
+                                    title="עדכן הרשאות גישה לענפים ותתי-ענפים עבור משתמש זה"
+                                  >
+                                    <GitBranch className="w-3 h-3" />
+                                    <span>{isEditingThis ? 'סגור עריכת ענפים' : 'עדכן ענפים'}</span>
+                                  </button>
+
+                                  <select
+                                    value={m.role}
+                                    onChange={(e) =>
+                                      onManageMember(
+                                        m.user_email,
+                                        m.user_name,
+                                        e.target.value as 'member' | 'editor',
+                                        m.selected_branch_ids || selectedBranchIds
+                                      )
+                                    }
+                                    className={`text-[11px] font-bold rounded-lg px-2 py-1 border cursor-pointer outline-none ${
+                                      m.role === 'editor'
+                                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    <option value="editor">✏️ עריכה</option>
+                                    <option value="member">👁️ צפייה בלבד</option>
+                                  </select>
+
+                                  {onRemoveMember && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onRemoveMember(m.user_email)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                      title="הסר משתמש מהיומן"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 text-[10px] font-bold">
+                                  {m.role === 'editor' ? '✏️ עריכה' : '👁️ צפייה בלבד'}
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] text-slate-500 block truncate">
-                              {m.user_email}
-                            </span>
-                            {!isOwnerMember && (
-                              <span className="text-[10px] text-indigo-700 font-semibold block">
-                                גישה ל:{' '}
-                                {memberBranches.length > 0 && memberBranches.length < branches.length
-                                  ? memberBranches.join(' • ')
-                                  : 'כל הענפים'}
-                                {subBranchLabel ? ` (${subBranchLabel})` : ''}
-                              </span>
-                            )}
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {isOwnerMember ? (
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
-                                מנהל ראשי
-                              </span>
-                            ) : isAdmin && onManageMember ? (
-                              <>
-                                <select
-                                  value={m.role}
-                                  onChange={(e) =>
-                                    onManageMember(
-                                      m.user_email,
-                                      m.user_name,
-                                      e.target.value as 'member' | 'editor',
-                                      m.selected_branch_ids || selectedBranchIds
-                                    )
-                                  }
-                                  className={`text-[11px] font-bold rounded-lg px-2 py-1 border cursor-pointer outline-none ${
-                                    m.role === 'editor'
-                                      ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                      : 'bg-slate-50 text-slate-700 border-slate-200'
-                                  }`}
+                          {/* Expandable Inline Branch & Permission Editor for Approved Member */}
+                          {isEditingThis && isAdmin && onManageMember && (
+                            <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-3 animate-in fade-in duration-150">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-extrabold text-indigo-950 flex items-center gap-1.5">
+                                  <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>עדכון הרשאות גישה לענפים עבור {m.user_name}:</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditBranchIds(branches.map((b) => b.id));
+                                    setEditSubBranch('all');
+                                    setEditMaxGen('all');
+                                  }}
+                                  className="text-[10px] font-bold text-indigo-700 hover:underline cursor-pointer"
                                 >
-                                  <option value="editor">✏️ עריכה</option>
-                                  <option value="member">👁️ צפייה בלבד</option>
-                                </select>
+                                  אפשר את כל הענפים והדורות
+                                </button>
+                              </div>
 
-                                {onRemoveMember && (
+                              {/* Branch Checkboxes */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {branches.map((b) => {
+                                  const checked = editBranchIds.includes(b.id);
+                                  return (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() => toggleEditBranch(b.id)}
+                                      className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+                                        checked
+                                          ? 'bg-white border-indigo-500 text-indigo-950 shadow-2xs'
+                                          : 'bg-white/60 border-slate-200 text-slate-500'
+                                      }`}
+                                    >
+                                      <span className="flex items-center gap-1.5 truncate">
+                                        <span
+                                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                                          style={{ backgroundColor: b.color || '#2563eb' }}
+                                        />
+                                        <span className="truncate">{b.name}</span>
+                                      </span>
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200">
+                                        {checked ? 'גישה ✓' : 'ללא גישה'}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Sub-Branch & Max Generation Selectors */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    הגבלה לתת-ענף ספציפי:
+                                  </label>
+                                  <select
+                                    value={editSubBranch}
+                                    onChange={(e) => setEditSubBranch(e.target.value)}
+                                    className="w-full text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
+                                  >
+                                    <option value="all">כל תתי-הענפים בענפים שנבחרו</option>
+                                    {branchHierarchy.mainBranches.length > 0 && (
+                                      <optgroup label="── ענף מרכזי (דור 2) ──">
+                                        {branchHierarchy.mainBranches.map((mb) => (
+                                          <option key={mb.id} value={mb.id}>
+                                            {mb.shortLabel} ({mb.count})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {branchHierarchy.grandparentBranches.length > 0 && (
+                                      <optgroup label="── סבא וסבתא (דור 3) ──">
+                                        {branchHierarchy.grandparentBranches.map((gp) => (
+                                          <option key={gp.id} value={gp.id}>
+                                            {gp.shortLabel} ({gp.count})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    {branchHierarchy.greatGrandparentBranches.length > 0 && (
+                                      <optgroup label="── סבא-רבא וסבתא-רבתא (דור 4) ──">
+                                        {branchHierarchy.greatGrandparentBranches.map((ggp) => (
+                                          <option key={ggp.id} value={ggp.id}>
+                                            {ggp.shortLabel} ({ggp.count})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    טווח דורות מורשה:
+                                  </label>
+                                  <select
+                                    value={editMaxGen}
+                                    onChange={(e) => setEditMaxGen(e.target.value)}
+                                    className="w-full text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 outline-none cursor-pointer"
+                                  >
+                                    <option value="all">כל הדורות בענף (ללא הגבלה)</option>
+                                    <option value="2">עד דור 2 בלבד</option>
+                                    <option value="3">עד דור 3 (סבים וסבתות)</option>
+                                    <option value="4">עד דור 4 (סבא-רבא)</option>
+                                    <option value="5">עד דור 5</option>
+                                    <option value="6">עד דור 6</option>
+                                    <option value="7">עד דור 7</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-200/60">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-slate-700">סוג הרשאה:</span>
+                                  <select
+                                    value={editRole}
+                                    onChange={(e) => setEditRole(e.target.value as 'member' | 'editor')}
+                                    className="text-[11px] font-bold bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-800 outline-none cursor-pointer"
+                                  >
+                                    <option value="member">👁️ צפייה בלבד</option>
+                                    <option value="editor">✏️ הרשאת עריכה</option>
+                                  </select>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => onRemoveMember(m.user_email)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                                    title="הסר משתמש מהיומן"
+                                    onClick={() => setEditingMemberEmail(null)}
+                                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-bold hover:bg-slate-50 cursor-pointer"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    ביטול
                                   </button>
-                                )}
-                              </>
-                            ) : (
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 text-[10px] font-bold">
-                                {m.role === 'editor' ? '✏️ עריכה' : '👁️ צפייה בלבד'}
-                              </span>
-                            )}
-                          </div>
+                                  <button
+                                    type="button"
+                                    disabled={savingEditEmail === m.user_email}
+                                    onClick={() => handleSaveMemberBranchPermissions(m)}
+                                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                  >
+                                    {savingEditEmail === m.user_email ? 'שומר...' : 'שמור הרשאות ענפים'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -980,7 +1386,77 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
                       />
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                    {/* Branch Selection for Email Invite / Update */}
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[11px] font-bold text-slate-700 block">
+                        בחר לאילו ענפים להעניק גישה:
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {branches.map((b) => {
+                          const checked = inviteBranchIds.includes(b.id);
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => toggleInviteBranch(b.id)}
+                              className={`flex items-center justify-between p-2 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                                checked
+                                  ? 'bg-white border-indigo-500 text-indigo-950 shadow-2xs'
+                                  : 'bg-white/60 border-slate-200 text-slate-500'
+                              }`}
+                            >
+                              <span className="flex items-center gap-1.5 truncate">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: b.color || '#2563eb' }}
+                                />
+                                <span className="truncate">{b.name}</span>
+                              </span>
+                              <span>{checked ? 'נבחר ✓' : 'בחר'}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <select
+                          value={inviteSubBranch}
+                          onChange={(e) => setInviteSubBranch(e.target.value)}
+                          className="text-[11px] font-bold bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-slate-800 outline-none cursor-pointer"
+                        >
+                          <option value="all">כל תתי-הענפים בענפים שנבחרו</option>
+                          {branchHierarchy.mainBranches.map((mb) => (
+                            <option key={mb.id} value={mb.id}>
+                              דור 2: {mb.shortLabel}
+                            </option>
+                          ))}
+                          {branchHierarchy.grandparentBranches.map((gp) => (
+                            <option key={gp.id} value={gp.id}>
+                              דור 3: {gp.shortLabel}
+                            </option>
+                          ))}
+                          {branchHierarchy.greatGrandparentBranches.map((ggp) => (
+                            <option key={ggp.id} value={ggp.id}>
+                              דור 4: {ggp.shortLabel}
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={inviteMaxGen}
+                          onChange={(e) => setInviteMaxGen(e.target.value)}
+                          className="text-[11px] font-bold bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-slate-800 outline-none cursor-pointer"
+                        >
+                          <option value="all">כל הדורות בענף</option>
+                          <option value="3">עד דור 3</option>
+                          <option value="4">עד דור 4</option>
+                          <option value="5">עד דור 5</option>
+                          <option value="6">עד דור 6</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] font-bold text-slate-700">הרשאה:</span>
                         <select
@@ -1018,7 +1494,7 @@ export const ShareCalendarModal: React.FC<ShareCalendarModalProps> = ({
           <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-2.5 text-xs text-slate-600">
             <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
             <span>
-              פרטיות ובקרה מלאה: ניתן לשנות הרשאת משתמש מצפייה לעריכה או להסיר גישה בכל עת.
+              פרטיות ובקרה מלאה: ניתן לעדכן הרשאות גישה לענפים, לשנות מצפייה לעריכה או להסיר גישה בכל עת.
             </span>
           </div>
         </div>

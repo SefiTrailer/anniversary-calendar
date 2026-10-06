@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, ArrowLeft, User, Heart, Calendar } from 'lucide-react';
+import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, ArrowLeft, User, Heart, Calendar, MapPin } from 'lucide-react';
 import { DeceasedPerson } from '@/lib/types';
 import {
   getDeceasedFullName,
@@ -9,6 +9,8 @@ import {
   getGenerationRelationInfo,
   formatDisplayDateWithGregorian,
   formatLeiluyNishmat,
+  UserTreePosition,
+  formatUserTreePositionLabel,
 } from '@/lib/hebrew-calendar';
 
 interface LineageStep {
@@ -26,6 +28,8 @@ interface LineageModalProps {
   person: DeceasedPerson | null;
   currentUser?: { name?: string; email?: string } | null;
   userGeneration?: number;
+  userTreePosition?: UserTreePosition;
+  onOpenTreePosition?: () => void;
 }
 
 function getStepGender(step: { name?: string; relation?: string; gender?: 'male' | 'female' } | string, maybeRel?: string): 'male' | 'female' {
@@ -108,6 +112,8 @@ export default function LineageModal({
   person,
   currentUser,
   userGeneration = 1,
+  userTreePosition,
+  onOpenTreePosition,
 }: LineageModalProps) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
@@ -189,50 +195,69 @@ export default function LineageModal({
         {/* Content Flow */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
           {/* Quick Relationship Banner */}
-          <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-serif font-black text-xs shrink-0 shadow-2xs ${
-                genInfo.isDirect ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-purple-100 text-purple-900 border border-purple-300'
-              }`}>
-                <span className="text-sm">דור {genInfo.relativeGeneration}</span>
-                {!genInfo.isDirect && <span className="text-[9px] font-bold">לא ישיר</span>}
-              </div>
-              <div>
-                <span className="text-xs text-slate-500 font-bold block">הקרבה המשפחתית אליך:</span>
-                <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                  <span className="text-base font-black text-slate-900 font-serif block">
-                    {genInfo.fullDescription}
+          <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-serif font-black text-xs shrink-0 shadow-2xs ${
+                  genInfo.isDirect ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-purple-100 text-purple-900 border border-purple-300'
+                }`}>
+                  <span className="text-sm">דור {genInfo.relativeGeneration}</span>
+                  {!genInfo.isDirect && <span className="text-[9px] font-bold">לא ישיר</span>}
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 font-bold block">
+                    הקרבה המשפחתית אליך
+                    {userTreePosition && userTreePosition.anchorPersonName
+                      ? ` (${formatUserTreePositionLabel(userTreePosition)})`
+                      : ''}
+                    :
                   </span>
-                  {genInfo.isDirect ? (
-                    <span className="text-2xs font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md font-serif">
-                      קשר ישיר של אב/אם קדמוני
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <span className="text-base font-black text-slate-900 font-serif block">
+                      {genInfo.fullDescription}
                     </span>
-                  ) : (
-                    <span className="text-2xs font-bold text-purple-800 bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-md font-serif">
-                      לא קשר ישיר של אב/אם קדמוני
-                    </span>
-                  )}
+                    {genInfo.isDirect ? (
+                      <span className="text-2xs font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md font-serif">
+                        קשר ישיר של אב/אם קדמוני
+                      </span>
+                    ) : (
+                      <span className="text-2xs font-bold text-purple-800 bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-md font-serif">
+                        לא קשר ישיר של אב/אם קדמוני
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={handleCopyText}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                title="העתק את שרשרת היוחסין"
-              >
-                {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
-                <span>{copiedText ? 'הועתק!' : 'העתק שרשרת'}</span>
-              </button>
-              <button
-                onClick={handleCopyLink}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-2xs transition cursor-pointer"
-                title="העתק קישור ישיר לעמוד זה"
-              >
-                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'הקישור הועתק!' : 'העתק קישור'}</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                {onOpenTreePosition && (
+                  <button
+                    type="button"
+                    onClick={onOpenTreePosition}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 transition cursor-pointer"
+                    title="הגדר או שנה היכן אתה ממוקם בעץ המשפחה"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-purple-600" />
+                    <span>היכן אני בעץ?</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleCopyText}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                  title="העתק את שרשרת היוחסין"
+                >
+                  {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                  <span>{copiedText ? 'הועתק!' : 'העתק שרשרת'}</span>
+                </button>
+                <button
+                  onClick={handleCopyLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-2xs transition cursor-pointer"
+                  title="העתק קישור ישיר לעמוד זה"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? 'הקישור הועתק!' : 'העתק קישור'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
