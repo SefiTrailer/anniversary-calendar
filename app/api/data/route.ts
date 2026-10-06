@@ -87,53 +87,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ calendars: [] });
   }
 
-  // 1. Fetch only calendars accessible to this specific user
-  const rawCalendars = await DataStore.getUserCalendars(userEmail);
-  const userCalendars = await Promise.all(
-    rawCalendars.map(async (cal) => {
-      try {
-        const [d, b, m] = await Promise.all([
-          DataStore.getDeceased(cal.id),
-          DataStore.getBranches(cal.id),
-          DataStore.getCalendarMembers(cal.id),
-        ]);
-        const pendingCount = m.filter((x) =>
-          (x.selected_branch_ids || []).includes('status:pending')
-        ).length;
-        const approvedCount = m.filter(
-          (x) => !(x.selected_branch_ids || []).includes('status:pending')
-        ).length;
-        return {
-          ...cal,
-          deceased_count: d.length,
-          branches_count: b.length,
-          members_count: approvedCount,
-          pending_requests_count: pendingCount,
-        };
-      } catch {
-        return cal;
-      }
-    })
-  );
-
+  // If a specific calendarId is requested, fetch all its data in a single parallel batch!
   if (calendarId) {
-    // Verify user has access to this calendar
-    const hasAccess = userCalendars.some(c => c.id === calendarId);
-    if (!hasAccess && userCalendars.length > 0) {
-      return NextResponse.json({ error: 'אין לך הרשאה לצפות ביומן זה' }, { status: 403 });
-    }
+    const [calendar, ownBranches, ownDeceased, existingMembership, allMembers, linkedData] =
+      await Promise.all([
+        DataStore.getCalendar(calendarId),
+        DataStore.getBranches(calendarId),
+        DataStore.getDeceased(calendarId),
+        DataStore.getUserMembership(calendarId, userEmail),
+        DataStore.getCalendarMembers(calendarId),
+        DataStore.getLinkedDeceasedAndBranchesForCalendar(calendarId, userEmail),
+      ]);
 
-    const calendar = await DataStore.getCalendar(calendarId);
     if (!calendar) {
       return NextResponse.json({ error: 'היומן לא נמצא' }, { status: 404 });
     }
 
-    const ownBranches = await DataStore.getBranches(calendarId);
-    const ownDeceased = await DataStore.getDeceased(calendarId);
-
-    // Fetch or create membership ONLY for this requesting user
-    let membership = await DataStore.getUserMembership(calendarId, userEmail);
     const isOwner = calendar.created_by_user_id.toLowerCase() === userEmail.toLowerCase();
+    const isApprovedMember =
+      existingMembership &&
+      !(existingMembership.selected_branch_ids || []).includes('status:pending');
+
+    if (!isOwner && !isApprovedMember) {
+      return NextResponse.json({ error: 'אין לך הרשאה לצפות ביומן זה' }, { status: 403 });
+    }
+
+    let membership = existingMembership;
     if (!membership) {
       membership = {
         id: crypto.randomUUID(),
@@ -183,21 +162,19 @@ export async function GET(request: NextRequest) {
           return true;
         });
 
-    // Also include any approved linked branches from other calendars into this user's unified calendar!
-    const { linkedBranches, linkedDeceased, linkedSources } =
-      await DataStore.getLinkedDeceasedAndBranchesForCalendar(calendarId, userEmail);
+    const { linkedBranches, linkedDeceased, linkedSources } = linkedData;
 
     const combinedBranches = [...visibleOwnBranches, ...linkedBranches];
     const combinedDeceased = [...visibleOwnDeceased];
+    const seenIds = new Set(combinedDeceased.map(d => d.id));
     for (const ld of linkedDeceased) {
-      if (!combinedDeceased.some(existing => existing.id === ld.id)) {
+      if (!seenIds.has(ld.id)) {
+        seenIds.add(ld.id);
         combinedDeceased.push(ld);
       }
     }
 
-    const members = isAdminMember
-      ? await DataStore.getCalendarMembers(calendarId)
-      : [];
+    const members = isAdminMember ? allMembers : [];
 
     return NextResponse.json({
       calendar,
@@ -206,11 +183,25 @@ export async function GET(request: NextRequest) {
       linkedSources,
       membership,
       members,
-      calendars: userCalendars,
     });
   }
 
-  // If no calendarId requested, return only the user's calendars list
+  // When no calendarId is requested (Calendars Hub), fetch user calendars with lightweight counts
+  const rawCalendars = await DataStore.getUserCalendars(userEmail);
+  const userCalendars = await Promise.all(
+    rawCalendars.map(async (cal) => {
+      try {
+        const counts = await DataStore.getCalendarCounts(cal.id);
+        return {
+          ...cal,
+          ...counts,
+        };
+      } catch {
+        return cal;
+      }
+    })
+  );
+
   return NextResponse.json({ calendars: userCalendars });
 }
 
@@ -387,11 +378,31 @@ export async function POST(request: NextRequest) {
         if (!isAdmin) {
           return NextResponse.json({ error: 'רק מנהל היומן יכול לערוך את שם ותיאור היומן' }, { status: 403 });
         }
+        const cleanName = (name || '').trim();
+        const cleanDescription = (description ?? '').trim();
         const updated = await DataStore.updateCalendar(calendarId, {
-          name: (name || '').trim(),
-          description: (description ?? '').trim(),
+          name: cleanName,
+          description: cleanDescription,
         });
-        return NextResponse.json({ success: true, calendar: updated });
+
+        // Also clear any custom calName: token on the user's membership so the new calendar name takes immediate effect
+        let updatedMembership = null;
+        const existingMembership = await DataStore.getUserMembership(calendarId, userEmail);
+        if (existingMembership && Array.isArray(existingMembership.selected_branch_ids)) {
+          const hasCalNameToken = existingMembership.selected_branch_ids.some(t => t.startsWith('calName:'));
+          if (hasCalNameToken) {
+            updatedMembership = await DataStore.saveMembership({
+              ...existingMembership,
+              selected_branch_ids: existingMembership.selected_branch_ids.filter(t => !t.startsWith('calName:')),
+            });
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          calendar: updated,
+          membership: updatedMembership,
+        });
       }
 
       case 'delete_calendar': {

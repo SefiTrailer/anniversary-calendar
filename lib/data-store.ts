@@ -298,6 +298,47 @@ export const DataStore = {
     });
   },
 
+  async getCalendarCounts(calendarId: string): Promise<{
+    deceased_count: number;
+    branches_count: number;
+    members_count: number;
+    pending_requests_count: number;
+  }> {
+    try {
+      const [dRes, bRes, mRes] = await Promise.all([
+        supabase.from('deceased').select('id', { count: 'exact', head: true }).eq('calendar_id', calendarId),
+        supabase.from('branches').select('id', { count: 'exact', head: true }).eq('calendar_id', calendarId),
+        supabase.from('calendar_members').select('selected_branch_ids').eq('calendar_id', calendarId),
+      ]);
+      const membersList = mRes.data || [];
+      const pendingCount = membersList.filter((x: any) =>
+        (x.selected_branch_ids || []).includes('status:pending')
+      ).length;
+      const approvedCount = membersList.filter(
+        (x: any) => !(x.selected_branch_ids || []).includes('status:pending')
+      ).length;
+      return {
+        deceased_count: dRes.count ?? 0,
+        branches_count: bRes.count ?? 0,
+        members_count: Math.max(1, approvedCount),
+        pending_requests_count: pendingCount,
+      };
+    } catch {
+      const cache = getCache();
+      const dCount = cache.deceased.filter(d => d.calendar_id === calendarId).length;
+      const bCount = cache.branches.filter(b => b.calendar_id === calendarId).length;
+      const mList = cache.memberships.filter(m => m.calendar_id === calendarId);
+      const pendingCount = mList.filter(x => (x.selected_branch_ids || []).includes('status:pending')).length;
+      const approvedCount = mList.filter(x => !(x.selected_branch_ids || []).includes('status:pending')).length;
+      return {
+        deceased_count: dCount,
+        branches_count: bCount,
+        members_count: Math.max(1, approvedCount),
+        pending_requests_count: pendingCount,
+      };
+    }
+  },
+
   async getLinkedDeceasedAndBranchesForCalendar(
     targetCalendarId: string,
     userEmail: string
@@ -332,77 +373,87 @@ export const DataStore = {
     const linkedDeceased: DeceasedPerson[] = [];
     const linkedSources: LinkedBranchSource[] = [];
 
-    for (const m of otherMemberships) {
-      const rawSelected = Array.isArray(m.selected_branch_ids) ? m.selected_branch_ids : [];
-      const linkedToken = rawSelected.find(s => s.startsWith('linkedToCal:'));
-      const isPending = rawSelected.includes('status:pending');
+    const results = await Promise.all(
+      otherMemberships.map(async (m) => {
+        const rawSelected = Array.isArray(m.selected_branch_ids) ? m.selected_branch_ids : [];
+        const linkedToken = rawSelected.find(s => s.startsWith('linkedToCal:'));
+        const isPending = rawSelected.includes('status:pending');
 
-      // Include if linked specifically to targetCalendarId, or linkedToCal:all, or if it's a pending request made by this user
-      const targetCalFromToken = linkedToken ? linkedToken.replace('linkedToCal:', '') : '';
-      const isLinkedToThisCal =
-        targetCalFromToken === targetCalendarId || targetCalFromToken === 'all' || isPending;
+        const targetCalFromToken = linkedToken ? linkedToken.replace('linkedToCal:', '') : '';
+        const isLinkedToThisCal =
+          targetCalFromToken === targetCalendarId || targetCalFromToken === 'all' || isPending;
 
-      if (!isLinkedToThisCal) continue;
+        if (!isLinkedToThisCal) return null;
 
-      const sourceCal = await this.getCalendar(m.calendar_id);
-      if (!sourceCal) continue;
+        const sourceCal = await this.getCalendar(m.calendar_id);
+        if (!sourceCal) return null;
 
-      linkedSources.push({
-        membership_id: m.id,
-        source_calendar_id: sourceCal.id,
-        source_calendar_name: sourceCal.name,
-        source_owner_name: sourceCal.created_by_user_name,
-        status: isPending ? 'pending' : 'approved',
-        role: m.role,
-        selected_branch_ids: rawSelected,
-        target_calendar_id: targetCalFromToken || targetCalendarId,
-      });
-
-      // Only merge actual branches & deceased into the calendar if the request is approved!
-      if (isPending) continue;
-
-      const sourceBranches = await this.getBranches(sourceCal.id);
-      const sourceDeceased = await this.getDeceased(sourceCal.id);
-      const allSourceBranchIds = sourceBranches.map(b => b.id);
-
-      const storedUuidBranches = rawSelected.filter(id => allSourceBranchIds.includes(id));
-      const targetBranchIds = storedUuidBranches.length > 0 ? storedUuidBranches : allSourceBranchIds;
-      const activeSubBranches = rawSelected.filter(
-        s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:')
-      );
-      const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
-      const effectiveMaxGenStr = storedMaxGenToken ? storedMaxGenToken.replace('maxGen:', '') : null;
-      const effectiveMaxGen =
-        effectiveMaxGenStr && effectiveMaxGenStr !== 'all' ? Number(effectiveMaxGenStr) : null;
-      const userGen = m.user_generation ?? 1;
-
-      const matchedBranches = sourceBranches
-        .filter(b => targetBranchIds.includes(b.id))
-        .map(b => ({
-          ...b,
-          name: `${b.name} (משותף מיומן ${sourceCal.name})`,
-          is_linked: true,
+        const sourceEntry: LinkedBranchSource = {
+          membership_id: m.id,
           source_calendar_id: sourceCal.id,
           source_calendar_name: sourceCal.name,
-        }));
+          source_owner_name: sourceCal.created_by_user_name,
+          status: isPending ? 'pending' : 'approved',
+          role: m.role,
+          selected_branch_ids: rawSelected,
+          target_calendar_id: targetCalFromToken || targetCalendarId,
+        };
 
-      const matchedDeceased = sourceDeceased.filter(d => {
-        if (!targetBranchIds.includes(d.branch_id)) return false;
-        if (activeSubBranches.length > 0) {
-          const matchesSub = activeSubBranches.some(sb =>
-            matchesBranchHierarchyFilter(d, sb, sourceBranches)
-          );
-          if (!matchesSub) return false;
+        if (isPending) {
+          return { sourceEntry, matchedBranches: [] as FamilyBranch[], matchedDeceased: [] as DeceasedPerson[] };
         }
-        if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
-          const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
-          if (relGen > effectiveMaxGen) return false;
-        }
-        return true;
-      });
 
-      linkedBranches.push(...matchedBranches);
-      linkedDeceased.push(...matchedDeceased);
+        const [sourceBranches, sourceDeceased] = await Promise.all([
+          this.getBranches(sourceCal.id),
+          this.getDeceased(sourceCal.id),
+        ]);
+        const allSourceBranchIds = sourceBranches.map(b => b.id);
+
+        const storedUuidBranches = rawSelected.filter(id => allSourceBranchIds.includes(id));
+        const targetBranchIds = storedUuidBranches.length > 0 ? storedUuidBranches : allSourceBranchIds;
+        const activeSubBranches = rawSelected.filter(
+          s => s.startsWith('gen2:') || s.startsWith('gen3:') || s.startsWith('gen4:')
+        );
+        const storedMaxGenToken = rawSelected.find(s => s.startsWith('maxGen:'));
+        const effectiveMaxGenStr = storedMaxGenToken ? storedMaxGenToken.replace('maxGen:', '') : null;
+        const effectiveMaxGen =
+          effectiveMaxGenStr && effectiveMaxGenStr !== 'all' ? Number(effectiveMaxGenStr) : null;
+        const userGen = m.user_generation ?? 1;
+
+        const matchedBranches = sourceBranches
+          .filter(b => targetBranchIds.includes(b.id))
+          .map(b => ({
+            ...b,
+            name: `${b.name} (משותף מיומן ${sourceCal.name})`,
+            is_linked: true,
+            source_calendar_id: sourceCal.id,
+            source_calendar_name: sourceCal.name,
+          }));
+
+        const matchedDeceased = sourceDeceased.filter(d => {
+          if (!targetBranchIds.includes(d.branch_id)) return false;
+          if (activeSubBranches.length > 0) {
+            const matchesSub = activeSubBranches.some(sb =>
+              matchesBranchHierarchyFilter(d, sb, sourceBranches)
+            );
+            if (!matchesSub) return false;
+          }
+          if (effectiveMaxGen && !isNaN(effectiveMaxGen) && effectiveMaxGen > 0) {
+            const relGen = getGenerationRelationInfo(d, userGen).relativeGeneration;
+            if (relGen > effectiveMaxGen) return false;
+          }
+          return true;
+        });
+
+        return { sourceEntry, matchedBranches, matchedDeceased };
+      })
+    );
+
+    for (const r of results) {
+      if (!r) continue;
+      linkedSources.push(r.sourceEntry);
+      linkedBranches.push(...r.matchedBranches);
+      linkedDeceased.push(...r.matchedDeceased);
     }
 
     return { linkedBranches, linkedDeceased, linkedSources };

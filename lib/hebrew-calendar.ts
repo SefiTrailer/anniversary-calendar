@@ -199,6 +199,8 @@ export interface UpcomingYahrzeit {
   yearsPassed: number;
 }
 
+const upcomingSingleYearCache = new Map<string, UpcomingYahrzeit[]>();
+
 /**
  * Calculates upcoming Yahrzeits for a deceased person for the given number of years.
  */
@@ -210,16 +212,24 @@ export function calculateUpcomingYahrzeits(
   if (!deceased || !deceased.hebrew_day || !deceased.hebrew_month) {
     return [];
   }
-  const results: UpcomingYahrzeit[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const currentHDate = new HDate(today);
-  const currentYear = currentHDate.getFullYear();
-
-  // Normalize month name to English standard Hebcal name
   const rawMonth = String(deceased.hebrew_month).trim();
   const baseMonth = HEBREW_TO_HEBCAL_MONTH[rawMonth] || rawMonth;
+
+  const cacheKey =
+    countYears === 1 && !includePassedThisYear
+      ? `${today.getTime()}:${deceased.hebrew_day}:${baseMonth}:${deceased.hebrew_year || 0}:${deceased.leap_year_preference || 'Adar II'}`
+      : '';
+
+  if (cacheKey && upcomingSingleYearCache.has(cacheKey)) {
+    return upcomingSingleYearCache.get(cacheKey)!;
+  }
+
+  const results: UpcomingYahrzeit[] = [];
+  const currentHDate = new HDate(today);
+  const currentYear = currentHDate.getFullYear();
 
   // Check if this year's yahrzeit has already passed; if so and includePassedThisYear is false, start from next year
   const maxOffset = countYears + 1;
@@ -271,6 +281,10 @@ export function calculateUpcomingYahrzeits(
     } catch (err) {
       console.warn(`Could not compute yahrzeit for ${deceased.first_name} ${deceased.last_name} in year ${targetYear}:`, err);
     }
+  }
+
+  if (cacheKey) {
+    upcomingSingleYearCache.set(cacheKey, results);
   }
 
   return results;
@@ -340,6 +354,23 @@ export function formatSimchaYearText(
  * - Ends at Shkiat HaChama (שקיעת החמה) on the Gregorian day itself (gregorianDate).
  */
 const JERUSALEM_GLOC = new GeoLocation('Jerusalem', 31.7683, 35.2137, 800, 'Asia/Jerusalem');
+const JERUSALEM_TIME_FORMATTER = new Intl.DateTimeFormat('he-IL', {
+  timeZone: 'Asia/Jerusalem',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const halachicTimesCache = new Map<
+  string,
+  {
+    startTzeit: Date;
+    endShkia: Date;
+    startTzeitFormatted: string;
+    endShkiaFormatted: string;
+    startTimeFormatted: string;
+    endTimeFormatted: string;
+  }
+>();
 
 export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
   startTzeit: Date;
@@ -349,6 +380,10 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
   startTimeFormatted: string;
   endTimeFormatted: string;
 } {
+  if (gregorianDateStr && halachicTimesCache.has(gregorianDateStr)) {
+    return halachicTimesCache.get(gregorianDateStr)!;
+  }
+
   const [y, m, d] = (gregorianDateStr || '').split('-').map(Number);
   const baseYear = y || new Date().getFullYear();
   const baseMonth = (m || 1) - 1;
@@ -378,17 +413,10 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
     // Keep safe fallback if Zmanim throws
   }
 
-  const fmt = new Intl.DateTimeFormat('he-IL', {
-    timeZone: 'Asia/Jerusalem',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  const startTzeitFormatted = JERUSALEM_TIME_FORMATTER.format(startTzeit);
+  const endShkiaFormatted = JERUSALEM_TIME_FORMATTER.format(endShkia);
 
-  const startTzeitFormatted = fmt.format(startTzeit);
-  const endShkiaFormatted = fmt.format(endShkia);
-
-  return {
+  const computed = {
     startTzeit,
     endShkia,
     startTzeitFormatted,
@@ -396,6 +424,12 @@ export function getHalachicYahrzeitTimes(gregorianDateStr: string): {
     startTimeFormatted: startTzeitFormatted,
     endTimeFormatted: endShkiaFormatted,
   };
+
+  if (gregorianDateStr) {
+    halachicTimesCache.set(gregorianDateStr, computed);
+  }
+
+  return computed;
 }
 
 /**
@@ -898,7 +932,7 @@ export function getGoogleCalendarDirectAddUrl(
     : [
         `יום השנה לפטירת ${fullDisplayName}`,
         zmanimInfo
-          ? `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם ומסתיים בשקיעה (${zmanimInfo.endShkiaFormatted})`
+          ? `🕯️ זמני היארצייט: מתחיל בצאת הכוכבים (${zmanimInfo.startTzeitFormatted}) בערב הקודם עד השקיעה למחרת (${zmanimInfo.endShkiaFormatted})`
           : '',
         relationLine,
         `תאריך עברי מקורי: ${originalDate}`,
@@ -1232,8 +1266,7 @@ export function matchesBranchHierarchyFilter(
 
 /**
  * Formats the display name of a calendar:
- * By default formats a family name $$$ as: "ימי זיכרון - יומן משפחת $$$".
- * If a custom display name override is provided (or if the user already set a custom full title), uses it as-is.
+ * Preserves the exact calendar name saved by the user (or customDisplayName override if provided).
  */
 export function formatCalendarDisplayName(
   rawCalendarName?: string | null,
@@ -1244,21 +1277,9 @@ export function formatCalendarDisplayName(
   }
   const base = (rawCalendarName || '').trim();
   if (!base) {
-    return 'ימי זיכרון - יומן משפחתי';
+    return 'לוח שנה משפחתי';
   }
-  // If it already starts with 'ימי זיכרון', keep it as-is
-  if (base.startsWith('ימי זיכרון')) {
-    return base;
-  }
-  // If it's a family name like "רייכקינד", "משפחת רייכקינד", or "יומן משפחת רייכקינד", format as "ימי זיכרון - יומן משפחת $$$"
-  const cleanFamily = base
-    .replace(/^יומן\s+משפחת\s+/i, '')
-    .replace(/^משפחת\s+/i, '')
-    .trim();
-  if (cleanFamily) {
-    return `ימי זיכרון - יומן משפחת ${cleanFamily}`;
-  }
-  return `ימי זיכרון - יומן משפחת ${base}`;
+  return base;
 }
 
 export function formatSimchaCalendarDisplayName(

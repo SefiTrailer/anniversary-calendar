@@ -146,7 +146,20 @@ export default function HomePage() {
     branchIds?: string[];
     autoApprove?: boolean;
   } | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'birthdays' | 'missing'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'birthdays' | 'missing'>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const urlView = sp.get('view');
+      if (urlView === 'list' || urlView === 'tree' || urlView === 'birthdays' || urlView === 'missing') {
+        return urlView;
+      }
+      const savedView = localStorage.getItem('ner_neshama_active_view_mode');
+      if (savedView === 'list' || savedView === 'tree' || savedView === 'birthdays' || savedView === 'missing') {
+        return savedView;
+      }
+    }
+    return 'list';
+  });
   const [lineagePerson, setLineagePerson] = useState<DeceasedPerson | null>(null);
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
   const [isEditingCalendarInfo, setIsEditingCalendarInfo] = useState(false);
@@ -155,6 +168,26 @@ export default function HomePage() {
   const [isSavingCalendarInfo, setIsSavingCalendarInfo] = useState(false);
 
   const [loading, setLoading] = useState(true);
+  const [loadingCalendarInfo, setLoadingCalendarInfo] = useState<{ id: string; name?: string } | null>(null);
+
+  // Sync viewMode with localStorage and URL query parameter when inside a calendar
+  useEffect(() => {
+    if (typeof window !== 'undefined' && currentCalendar) {
+      localStorage.setItem('ner_neshama_active_view_mode', viewMode);
+      const sp = new URLSearchParams(window.location.search);
+      const isShare = sp.get('share') === 'true' || sp.get('isShare') === 'true';
+      if (!isShare) {
+        sp.set('calendarId', currentCalendar.id);
+        if (viewMode !== 'list') {
+          sp.set('view', viewMode);
+        } else {
+          sp.delete('view');
+        }
+        const qs = sp.toString();
+        window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+      }
+    }
+  }, [viewMode, currentCalendar]);
 
   // Check for shared link in URL upon mount or when currentUser logs in
   useEffect(() => {
@@ -379,7 +412,7 @@ export default function HomePage() {
   }, []);
 
   // Fetch calendars list for the authenticated user
-  const loadUserCalendars = async () => {
+  const loadUserCalendars = async (silent: boolean = false) => {
     if (!currentUser) {
       setCalendars([]);
       setCurrentCalendar(null);
@@ -391,7 +424,7 @@ export default function HomePage() {
     }
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const queryParams = new URLSearchParams({
         userEmail: currentUser.email,
         userName: currentUser.name,
@@ -406,16 +439,35 @@ export default function HomePage() {
     } catch (err) {
       console.error('Error loading user calendars:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   // Fetch full details of a specific calendar
-  const loadCalendarDetails = async (calendarId: string) => {
+  const loadCalendarDetails = async (calendarId: string, calendarNameHint?: string) => {
     if (!currentUser) return;
 
     try {
       setLoading(true);
+      setLoadingCalendarInfo({
+        id: calendarId,
+        name: calendarNameHint || currentCalendar?.name || undefined,
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ner_neshama_active_calendar_id', calendarId);
+        if (calendarNameHint) {
+          localStorage.setItem('ner_neshama_active_calendar_name', calendarNameHint);
+        }
+        const sp = new URLSearchParams(window.location.search);
+        const isShare = sp.get('share') === 'true' || sp.get('isShare') === 'true';
+        if (!isShare) {
+          sp.set('calendarId', calendarId);
+          const qs = sp.toString();
+          window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+        }
+      }
+
       const queryParams = new URLSearchParams({
         userEmail: currentUser.email,
         userName: currentUser.name,
@@ -425,42 +477,77 @@ export default function HomePage() {
       const res = await fetch(`/api/data?${queryParams.toString()}`);
       const data = await res.json();
 
-      if (data.calendar) {
-        setCurrentCalendar(data.calendar);
-        setBranches(data.branches || []);
-        setDeceased(data.deceased || []);
-        setCalendarMembers(data.members || []);
-        setLinkedSources(data.linkedSources || []);
-        if (data.membership) {
-          setMembership(data.membership);
-          const pos = extractUserTreePosition(
-            data.membership.selected_branch_ids,
-            data.membership.user_generation
-          );
-          if (typeof data.membership.user_generation === 'number') {
-            setUserGeneration(data.membership.user_generation);
-            setUserTreePosition(pos);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('ner_neshama_user_generation', String(data.membership.user_generation));
-              localStorage.setItem('ner_neshama_user_tree_position', JSON.stringify(pos));
-            }
-          } else if (pos.anchorPersonName || pos.relationType !== 'general') {
-            setUserGeneration(pos.userGeneration);
-            setUserTreePosition(pos);
+      if (!res.ok || !data.calendar) {
+        // If calendar no longer exists or user lost access, clear stored active calendar ID
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('ner_neshama_active_calendar_id');
+          localStorage.removeItem('ner_neshama_active_calendar_name');
+          const sp = new URLSearchParams(window.location.search);
+          if (sp.get('calendarId') === calendarId && sp.get('share') !== 'true' && sp.get('isShare') !== 'true') {
+            sp.delete('calendarId');
+            sp.delete('view');
+            const qs = sp.toString();
+            window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
           }
+        }
+        return;
+      }
+
+      setCurrentCalendar(data.calendar);
+      if (typeof window !== 'undefined' && data.calendar.name) {
+        localStorage.setItem('ner_neshama_active_calendar_name', data.calendar.name);
+      }
+      setBranches(data.branches || []);
+      setDeceased(data.deceased || []);
+      setCalendarMembers(data.members || []);
+      setLinkedSources(data.linkedSources || []);
+      if (data.membership) {
+        setMembership(data.membership);
+        const pos = extractUserTreePosition(
+          data.membership.selected_branch_ids,
+          data.membership.user_generation
+        );
+        if (typeof data.membership.user_generation === 'number') {
+          setUserGeneration(data.membership.user_generation);
+          setUserTreePosition(pos);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('ner_neshama_user_generation', String(data.membership.user_generation));
+            localStorage.setItem('ner_neshama_user_tree_position', JSON.stringify(pos));
+          }
+        } else if (pos.anchorPersonName || pos.relationType !== 'general') {
+          setUserGeneration(pos.userGeneration);
+          setUserTreePosition(pos);
         }
       }
     } catch (err) {
       console.error('Error loading calendar details:', err);
     } finally {
+      setLoadingCalendarInfo(null);
       setLoading(false);
     }
   };
 
-  // When currentUser changes, reload calendars
+  // When currentUser changes, reload calendars and restore last active calendar if present
   useEffect(() => {
     if (currentUser) {
-      loadUserCalendars();
+      let savedCalId: string | null = null;
+      let savedCalName: string | undefined = undefined;
+      if (typeof window !== 'undefined') {
+        const sp = new URLSearchParams(window.location.search);
+        const isShare = sp.get('share') === 'true' || sp.get('isShare') === 'true';
+        if (!isShare) {
+          savedCalId = sp.get('calendarId') || localStorage.getItem('ner_neshama_active_calendar_id');
+          savedCalName = localStorage.getItem('ner_neshama_active_calendar_name') || undefined;
+        }
+      }
+
+      if (savedCalId) {
+        // Load the active calendar immediately and fetch the user's calendars list in parallel
+        loadCalendarDetails(savedCalId, savedCalName);
+        loadUserCalendars(true);
+      } else {
+        loadUserCalendars(false);
+      }
     } else {
       setCalendars([]);
       setCurrentCalendar(null);
@@ -469,17 +556,28 @@ export default function HomePage() {
       setMembership(null);
       setCalendarMembers([]);
       setLinkedSources([]);
+      setLoadingCalendarInfo(null);
       setLoading(false);
     }
   }, [currentUser]);
 
   // Handle switching or selecting a calendar
   const handleSelectCalendar = async (cal: CalendarProject) => {
-    await loadCalendarDetails(cal.id);
+    await loadCalendarDetails(cal.id, cal.name);
   };
 
   // Handle returning to Calendars Hub
   const handleBackToHub = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('ner_neshama_active_calendar_id');
+      localStorage.removeItem('ner_neshama_active_calendar_name');
+      localStorage.removeItem('ner_neshama_active_view_mode');
+      const sp = new URLSearchParams(window.location.search);
+      sp.delete('calendarId');
+      sp.delete('view');
+      const qs = sp.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
     setCurrentCalendar(null);
     setBranches([]);
     setDeceased([]);
@@ -507,9 +605,10 @@ export default function HomePage() {
     }
 
     if (currentCalendar?.id === calendarId) {
-      setCurrentCalendar(null);
+      handleBackToHub();
+    } else {
+      await loadUserCalendars();
     }
-    await loadUserCalendars();
   };
 
   // Add or update deceased with conflict check
@@ -714,6 +813,8 @@ export default function HomePage() {
   const handleUpdateCalendar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentCalendar || !currentUser || !editCalendarName.trim()) return;
+    const newName = editCalendarName.trim();
+    const newDesc = editCalendarDescription.trim();
     setIsSavingCalendarInfo(true);
     try {
       const res = await fetch('/api/data', {
@@ -723,18 +824,41 @@ export default function HomePage() {
           action: 'update_calendar',
           payload: {
             calendarId: currentCalendar.id,
-            name: editCalendarName.trim(),
-            description: editCalendarDescription.trim(),
+            name: newName,
+            description: newDesc,
           },
           userEmail: currentUser.email,
         }),
       });
       const data = await res.json();
-      if (data.success && data.calendar) {
-        setCurrentCalendar(data.calendar);
-        setIsEditingCalendarInfo(false);
-        await loadUserCalendars();
+      if (!res.ok) {
+        alert(data.error || 'שגיאה בשמירת שם היומן');
+        return;
       }
+      const updatedCal = data.calendar || {
+        ...currentCalendar,
+        name: newName,
+        description: newDesc,
+      };
+      setCurrentCalendar(updatedCal);
+      setCalendars((prev) =>
+        prev.map((c) => (c.id === updatedCal.id ? { ...c, name: updatedCal.name, description: updatedCal.description } : c))
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ner_neshama_active_calendar_name', updatedCal.name);
+      }
+      if (data.membership) {
+        setMembership(data.membership);
+      } else if (membership && Array.isArray(membership.selected_branch_ids)) {
+        setMembership({
+          ...membership,
+          selected_branch_ids: membership.selected_branch_ids.filter((t) => !t.startsWith('calName:')),
+        });
+      }
+      setIsEditingCalendarInfo(false);
+      loadUserCalendars(true);
+    } catch {
+      alert('שגיאה בשמירת שם היומן');
     } finally {
       setIsSavingCalendarInfo(false);
     }
@@ -830,6 +954,12 @@ export default function HomePage() {
 
   const handleSignOut = () => {
     localStorage.removeItem('ner_neshama_user');
+    localStorage.removeItem('ner_neshama_active_calendar_id');
+    localStorage.removeItem('ner_neshama_active_calendar_name');
+    localStorage.removeItem('ner_neshama_active_view_mode');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/');
+    }
     supabase.auth.signOut();
     setCurrentUser(null);
     setCurrentCalendar(null);
@@ -1274,7 +1404,7 @@ export default function HomePage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                      🕯️ מצאת הכוכבים עד השקיעה
+                      🕯️ מצאת הכוכבים עד השקיעה למחרת
                     </span>
                     <button
                       type="button"
@@ -1301,6 +1431,7 @@ export default function HomePage() {
                       {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
                         const genInfo = getGenerationRelationInfo(person, userGeneration);
                         const zm = upcoming.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
+                        const personBranch = sharedViewData.branches.find((b) => b.id === person.branch_id);
                         return (
                           <div
                             key={person.id}
@@ -1311,10 +1442,26 @@ export default function HomePage() {
                             <div className="flex flex-col flex-1 justify-between gap-2">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-lg font-black text-slate-900 leading-tight font-serif">
-                                      {getDeceasedFullName(person)}
-                                    </span>
+                                  <span className="text-base sm:text-lg font-black text-slate-900 leading-snug font-serif block break-words">
+                                    {getDeceasedFullName(person)}
+                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                    {personBranch && (
+                                      <span
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold border shadow-2xs"
+                                        style={{
+                                          backgroundColor: `${personBranch.color}18`,
+                                          color: personBranch.color,
+                                          borderColor: `${personBranch.color}40`,
+                                        }}
+                                      >
+                                        <span
+                                          className="w-2 h-2 rounded-full shrink-0"
+                                          style={{ backgroundColor: personBranch.color }}
+                                        />
+                                        <span>ענף: {personBranch.name}</span>
+                                      </span>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1333,7 +1480,7 @@ export default function HomePage() {
                                     </button>
                                   </div>
                                   {person.father_or_mother_name && (
-                                    <span className="text-[11px] text-slate-600 font-semibold block mt-1 font-serif">
+                                    <span className="text-[11px] text-slate-600 font-semibold block mt-1.5 font-serif break-words">
                                       לעילוי נשמת: {formatLeiluyNishmat(person)}
                                     </span>
                                   )}
@@ -1359,7 +1506,7 @@ export default function HomePage() {
                                   {zm && (
                                     <span className="text-[11px] font-semibold text-amber-800 mt-0.5 flex items-center gap-1">
                                       <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                      <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
                                     </span>
                                   )}
                                 </div>
@@ -1374,7 +1521,7 @@ export default function HomePage() {
                                 href={getGoogleCalendarDirectAddUrl(
                                   person,
                                   upcoming,
-                                  sharedViewData.branches.find((b) => b.id === person.branch_id)?.name,
+                                  personBranch?.name,
                                   typeof window !== 'undefined' ? window.location.origin : ''
                                 )}
                                 onClick={(e) => e.stopPropagation()}
@@ -1521,9 +1668,43 @@ export default function HomePage() {
         )}
 
         {/* ========================================================================= */}
+        {/* LOADING CALENDAR ANIMATION VIEW                                           */}
+        {/* ========================================================================= */}
+        {currentUser && !sharedViewData && !currentCalendar && (loadingCalendarInfo || loading) && (
+          <div className="max-w-xl mx-auto py-16 px-6 text-center">
+            <div className="bg-white rounded-3xl p-8 sm:p-10 border border-slate-200/80 shadow-xl space-y-6 relative overflow-hidden">
+              <div className="absolute -top-16 -right-16 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border-4 border-amber-200 border-t-amber-600 animate-spin" />
+                <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shadow-inner">
+                  <Flame className="w-7 h-7 animate-pulse" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h2 className="text-xl sm:text-2xl font-black font-serif text-slate-900">
+                  {loadingCalendarInfo?.name
+                    ? `טוען את "${formatCalendarDisplayName(loadingCalendarInfo.name)}"...`
+                    : 'טוען את היומן המשפחתי...'}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                  מאחזר ענפי משפחה, תאריכי יארצייט, שמחות ועץ הדורות...
+                </p>
+              </div>
+
+              <div className="w-48 h-1.5 bg-slate-100 rounded-full overflow-hidden mx-auto">
+                <div className="h-full w-2/3 bg-gradient-to-r from-amber-500 via-blue-600 to-indigo-600 rounded-full animate-pulse" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
         {/* VIEW 2: LOGGED IN BUT NO CALENDARS CREATED YET (ONBOARDING)               */}
         {/* ========================================================================= */}
-        {currentUser && !sharedViewData && calendars.length === 0 && !loading && (
+        {currentUser && !sharedViewData && !loadingCalendarInfo && calendars.length === 0 && !loading && (
           <div className="max-w-2xl mx-auto space-y-6 text-center py-10">
             <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
               <Flame className="w-10 h-10 animate-pulse" />
@@ -1570,7 +1751,7 @@ export default function HomePage() {
         {/* ========================================================================= */}
         {/* VIEW 3: LOGGED IN & AT CALENDARS HUB ("כל היומנים שלי")                   */}
         {/* ========================================================================= */}
-        {currentUser && !sharedViewData && !currentCalendar && calendars.length > 0 && (
+        {currentUser && !sharedViewData && !currentCalendar && !loadingCalendarInfo && calendars.length > 0 && (
           <div className="space-y-6">
             {/* Hub Banner */}
             <div className="bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -2021,7 +2202,7 @@ export default function HomePage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-3 flex-wrap">
                         <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight font-serif text-slate-50">
-                          {formatCalendarDisplayName(currentCalendar.name, savedCustomCalName)}
+                          {formatCalendarDisplayName(currentCalendar.name)}
                         </h2>
                         {isAdmin && (
                           <button
@@ -2060,7 +2241,7 @@ export default function HomePage() {
                           required
                           value={editCalendarName}
                           onChange={(e) => setEditCalendarName(e.target.value)}
-                          placeholder="למשל: ימי זיכרון - יומן משפחת רייכקינד"
+                          placeholder="למשל: יומן משפחת רייכקינד"
                           className="w-full px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-white text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none"
                         />
                       </div>
@@ -2183,7 +2364,7 @@ export default function HomePage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="hidden sm:inline-block text-xs font-bold text-amber-900 bg-amber-200/60 px-3 py-1 rounded-full font-serif">
-                      🕯️ מצאת הכוכבים עד השקיעה
+                      🕯️ מצאת הכוכבים עד השקיעה למחרת
                     </span>
                     <button
                       type="button"
@@ -2210,6 +2391,7 @@ export default function HomePage() {
                       {upcomingThisMonth.map(({ deceased: person, upcoming, diffDays }) => {
                         const genInfo = getGenerationRelationInfo(person, userGeneration);
                         const zm = upcoming.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
+                        const personBranch = branches.find((b) => b.id === person.branch_id);
                         return (
                           <div
                             key={person.id}
@@ -2217,10 +2399,10 @@ export default function HomePage() {
                             className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between gap-2.5 hover:shadow-md transition cursor-pointer hover:border-amber-400 h-full min-h-[192px]"
                             title="לחץ לצפייה בשרשרת הייחוס המלאה (בן אחרי בן / בת)"
                           >
-                            {/* Top Section: Name, Badges & Leiluy Nishmat */}
+                            {/* Top Section: Full Name, Branch Badge, Generation Badge & Full Leiluy Nishmat */}
                             <div className="space-y-1.5">
                               <div className="flex items-start justify-between gap-2">
-                                <span className="text-base sm:text-lg font-black text-slate-900 leading-snug font-serif line-clamp-1">
+                                <span className="text-base sm:text-lg font-black text-slate-900 leading-snug font-serif break-words">
                                   {getDeceasedFullName(person)}
                                 </span>
                                 <span className="text-[11px] font-black px-2.5 py-0.5 rounded-xl bg-amber-100 text-amber-900 shrink-0 whitespace-nowrap">
@@ -2228,7 +2410,23 @@ export default function HomePage() {
                                 </span>
                               </div>
 
-                              <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {personBranch && (
+                                  <span
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold border shadow-2xs"
+                                    style={{
+                                      backgroundColor: `${personBranch.color}18`,
+                                      color: personBranch.color,
+                                      borderColor: `${personBranch.color}40`,
+                                    }}
+                                  >
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ backgroundColor: personBranch.color }}
+                                    />
+                                    <span>ענף: {personBranch.name}</span>
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -2245,12 +2443,13 @@ export default function HomePage() {
                                   <GitCommit className={`w-3 h-3 shrink-0 ${genInfo.isDirect ? 'text-amber-700' : 'text-purple-700'}`} />
                                   <span>דור {genInfo.relativeGeneration}{!genInfo.isDirect ? ' (לא ישיר)' : ''}</span>
                                 </button>
-                                {person.father_or_mother_name && (
-                                  <span className="text-[11px] text-slate-600 font-semibold font-serif truncate max-w-[220px]">
-                                    לעילוי נשמת: {formatLeiluyNishmat(person)}
-                                  </span>
-                                )}
                               </div>
+
+                              {person.father_or_mother_name && (
+                                <span className="block text-[11px] text-slate-600 font-semibold font-serif break-words pt-0.5">
+                                  לעילוי נשמת: {formatLeiluyNishmat(person)}
+                                </span>
+                              )}
                             </div>
 
                             {/* Middle Section: Uniform Date & Halachic Time Box */}
@@ -2270,7 +2469,7 @@ export default function HomePage() {
                               {zm && (
                                 <div className="text-[11px] font-semibold text-amber-800 mt-1 flex items-center gap-1 whitespace-nowrap">
                                   <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
                                 </div>
                               )}
                             </div>
@@ -2284,7 +2483,7 @@ export default function HomePage() {
                                 href={getGoogleCalendarDirectAddUrl(
                                   person,
                                   upcoming,
-                                  branches.find((b) => b.id === person.branch_id)?.name,
+                                  personBranch?.name,
                                   typeof window !== 'undefined' ? window.location.origin : ''
                                 )}
                                 onClick={(e) => e.stopPropagation()}

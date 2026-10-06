@@ -83,6 +83,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
   const [maxGenerationsFilter, setMaxGenerationsFilter] = useState<string>('all'); // Up to Gen N
   const [selectedGenerationFilter, setSelectedGenerationFilter] = useState<string>('all'); // Exact Gen N
   const [sortBy, setSortBy] = useState<'upcoming' | 'name' | 'branch'>('upcoming');
+  const [visibleCount, setVisibleCount] = useState<number>(36);
 
   const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
 
@@ -650,8 +651,9 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-stretch">
-          {filteredAndSorted.map(({ person, upcoming, daysUntil }) => {
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-stretch">
+            {filteredAndSorted.slice(0, visibleCount).map(({ person, upcoming, daysUntil }) => {
             const branch = branchMap.get(person.branch_id);
             const { cleanTitle, showTitle, cleanFirstName, cleanLastName, honorific, fullName } = getDeceasedFormattedParts(person);
             const dateDisplay = formatDisplayDateWithGregorian(
@@ -853,7 +855,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                               return (
                                 <p className="text-[11px] font-semibold text-amber-900 mt-1 flex items-center gap-1 font-sans">
                                   <Sunset className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה ({zm.endTimeFormatted})</span>
+                                  <span>מצאת הכוכבים ({zm.startTimeFormatted}) עד השקיעה למחרת ({zm.endTimeFormatted})</span>
                                 </p>
                               );
                             })()}
@@ -897,6 +899,26 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
               </div>
             );
           })}
+          </div>
+
+          {filteredAndSorted.length > visibleCount && (
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((prev) => prev + 36)}
+                className="px-6 py-3 rounded-2xl bg-slate-900 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition cursor-pointer"
+              >
+                הצג עוד נפטרים ({Math.min(visibleCount, filteredAndSorted.length)} מתוך {filteredAndSorted.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibleCount(filteredAndSorted.length)}
+                className="px-5 py-3 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs shadow-2xs transition cursor-pointer"
+              >
+                הצג את כל הרשימה ({filteredAndSorted.length})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
