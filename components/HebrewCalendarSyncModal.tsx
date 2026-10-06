@@ -37,7 +37,7 @@ interface HebrewCalendarSyncModalProps {
   onClose: () => void;
 }
 
-const STORAGE_KEY = 'ner_neshama_hebrew_cal_prefs_v1';
+const STORAGE_KEY = 'ner_neshama_hebrew_cal_prefs_v2';
 
 const QUICK_CITY_IDS = ['jerusalem', 'bnei_brak', 'tel_aviv', 'haifa', 'modiin', 'beer_sheva'];
 

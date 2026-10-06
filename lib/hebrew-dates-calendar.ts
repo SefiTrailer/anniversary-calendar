@@ -361,7 +361,7 @@ export const DEFAULT_HEBREW_CALENDAR_OPTIONS: HebrewCalendarFeedOptions = {
   fasts: true,
   roshChodesh: true,
   omer: false,
-  modernHolidays: true,
+  modernHolidays: false,
   timedCandles: true,
   zmanim: ['sunrise', 'szksGra', 'sztGra', 'sunset', 'tzeit'],
   zmanimDisplay: 'in_date',
@@ -525,7 +525,7 @@ export function parseHebrewCalendarQueryParams(searchParams: URLSearchParams): H
   const fasts = searchParams.get('fasts') !== '0';
   const roshChodesh = searchParams.get('roshChodesh') !== '0';
   const omer = searchParams.get('omer') === '1';
-  const modernHolidays = searchParams.get('modern') !== '0';
+  const modernHolidays = searchParams.get('modern') === '1';
   const timedCandles = searchParams.get('timedCandles') !== '0';
   const calName = (searchParams.get('calName') || '').trim();
 
@@ -571,7 +571,7 @@ export function parseHebrewCalendarQueryParams(searchParams: URLSearchParams): H
  */
 export function buildHebrewCalendarQueryParams(options: HebrewCalendarFeedOptions): URLSearchParams {
   const params = new URLSearchParams();
-  params.set('v', '1');
+  params.set('v', '2');
   params.set('city', options.city || 'jerusalem');
   params.set('dates', options.hebrewDates ? '1' : '0');
   if (!options.includeYearInDate) params.set('year', '0');
@@ -580,7 +580,7 @@ export function buildHebrewCalendarQueryParams(options: HebrewCalendarFeedOption
   params.set('fasts', options.fasts ? '1' : '0');
   params.set('roshChodesh', options.roshChodesh ? '1' : '0');
   if (options.omer) params.set('omer', '1');
-  if (!options.modernHolidays) params.set('modern', '0');
+  if (options.modernHolidays) params.set('modern', '1');
   if (!options.timedCandles) params.set('timedCandles', '0');
   params.set('zmanim', options.zmanim.length > 0 ? options.zmanim.join(',') : 'none');
   if (options.zmanimDisplay !== 'in_date') {
@@ -691,10 +691,20 @@ export function getHebrewCalendarLivePreview(options: HebrewCalendarFeedOptions)
     omer: false,
   });
 
+const ALLOWED_NATIONAL_MODERN_DESCS = new Set([
+  'Yom HaShoah',
+  'Yom HaZikaron',
+  "Yom HaAtzma'ut",
+  'Yom Yerushalayim',
+]);
+
   let upcomingHolidayOrFast: LivePreviewData['upcomingHolidayOrFast'] = null;
   for (const ev of rawEvents) {
     const m = ev.getFlags();
     if (m & (flags.LIGHT_CANDLES | flags.LIGHT_CANDLES_TZEIS | flags.YOM_TOV_ENDS | flags.PARSHA_HASHAVUA)) {
+      continue;
+    }
+    if ((m & flags.MODERN_HOLIDAY) && !ALLOWED_NATIONAL_MODERN_DESCS.has(ev.getDesc())) {
       continue;
     }
     const isFast = Boolean(m & (flags.MINOR_FAST | flags.MAJOR_FAST));
@@ -771,7 +781,7 @@ export function generateHebrewCalendarIcs(
     name: displayCalName,
     description: calDescription,
     method: ICalCalendarMethod.PUBLISH,
-    ttl: 3600,
+    ttl: 900,
     x: [
       ['X-WR-TIMEZONE', city.tzid],
       ['X-APPLE-CALENDAR-COLOR', '#7c3aed'],
@@ -780,7 +790,7 @@ export function generateHebrewCalendarIcs(
   });
 
   const now = new Date();
-  const dynamicSequence = Math.max(1, Math.floor((Date.now() - 1790000000000) / 60000));
+  const dynamicSequence = Math.max(100, Math.floor((Date.now() - 1790000000000) / 10000));
 
   // Rolling window: 30 days back to 380 days forward (~13.5 months)
   const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30, 12, 0, 0);
@@ -970,6 +980,11 @@ export function generateHebrewCalendarIcs(
         flags.EREV |
         flags.CHANUKAH_CANDLES)
     ) {
+      // Never include civic/school/personality days (e.g. Ben-Gurion Day, Rabin Day, Aliyah School Observance, Herzl Day, Family Day)
+      if ((mask & flags.MODERN_HOLIDAY) && !ALLOWED_NATIONAL_MODERN_DESCS.has(desc)) {
+        continue;
+      }
+
       let emoji = '✡️';
       if (desc.includes('Rosh Hashana')) emoji = '🍎';
       else if (desc.includes('Sukkot') || desc.includes('Shmini Atzeret') || desc.includes('Simchat Torah')) emoji = '🌿';

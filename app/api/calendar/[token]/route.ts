@@ -192,7 +192,7 @@ export async function GET(
     name: displayCalName,
     description: displayCalDesc,
     method: ICalCalendarMethod.PUBLISH,
-    ttl: 3600, // Re-fetch every 1 hour
+    ttl: 900, // Re-fetch every 15 minutes
     x: [
       ['X-WR-TIMEZONE', 'Asia/Jerusalem'],
       ['X-APPLE-CALENDAR-COLOR', feedType === 'simchas' ? '#10b981' : '#1e3a8a'],
@@ -200,8 +200,8 @@ export async function GET(
     ],
   });
 
-  // Dynamic sequence so Google Calendar automatically updates modified dates or names
-  const dynamicSequence = Math.max(1, Math.floor((Date.now() - 1790000000000) / 60000));
+  // Dynamic sequence so Google Calendar automatically updates modified dates or names in-place
+  const dynamicSequence = Math.max(100, Math.floor((Date.now() - 1790000000000) / 10000));
   const nowStamp = new Date();
   const todayUtcStr = nowStamp.toISOString().slice(0, 10);
 
@@ -347,7 +347,7 @@ export async function GET(
             .join('\n');
 
       pendingEvents.push({
-        id: `${living ? simchaType : 'yahrzeit-day'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
+        id: `${living ? simchaType : 'yahrzeit'}-${dec.id}-${upcoming.hebrewYear}@yahrzeit-hub`,
         gregorianDateStr: upcoming.gregorianDateStr,
         startDate,
         endDate,
