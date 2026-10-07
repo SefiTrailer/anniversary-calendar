@@ -21,10 +21,12 @@ export const metadata: Metadata = {
   description: 'זמנים משפחתיים — לוח שנה משפחתי עברי: ניהול ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ימי הולדת, ימי נישואין ושמחות, וסנכרון ליומן גוגל בשני צבעים',
   icons: {
     icon: [
-      { url: '/favicon.svg?v=2', type: 'image/svg+xml', sizes: 'any' },
+      { url: '/favicon.svg?v=3', type: 'image/svg+xml', sizes: 'any' },
+      { url: '/favicon.png?v=3', type: 'image/png', sizes: '64x64' },
+      { url: '/favicon.ico?v=3', sizes: '64x64' },
     ],
-    shortcut: ['/favicon.svg?v=2'],
-    apple: ['/favicon.svg?v=2'],
+    shortcut: ['/favicon.ico?v=3'],
+    apple: [{ url: '/apple-touch-icon.png?v=3', sizes: '180x180', type: 'image/png' }],
   },
 };
 
@@ -36,8 +38,10 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" className={`${frankRuhl.variable} ${assistant.variable}`}>
       <head>
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
-        <link rel="shortcut icon" href="/favicon.svg?v=2" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
+        <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=3" />
+        <link rel="shortcut icon" href="/favicon.ico?v=3" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var h=window.location.hostname;if(h&&h!=='family-zmanim.vercel.app'&&h!=='localhost'&&h!=='127.0.0.1'){window.location.replace('https://family-zmanim.vercel.app'+window.location.pathname+window.location.search+window.location.hash);}}catch(e){}})();`,
