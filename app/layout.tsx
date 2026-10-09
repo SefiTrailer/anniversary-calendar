@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Frank_Ruhl_Libre, Assistant } from 'next/font/google';
 import './globals.css';
 
@@ -16,9 +16,26 @@ const assistant = Assistant({
   display: 'swap',
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  themeColor: '#0f172a',
+};
+
 export const metadata: Metadata = {
   title: 'זמנים משפחתיים - לוח שנה משפחתי | ימי זיכרון, שמחות ועץ משפחה',
   description: 'זמנים משפחתיים — לוח שנה משפחתי עברי: ניהול ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ימי הולדת, ימי נישואין ושמחות, וסנכרון ליומן גוגל בשני צבעים',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'זמנים משפחתיים',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: [
       { url: '/favicon.svg?v=3', type: 'image/svg+xml', sizes: 'any' },
@@ -42,6 +59,9 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=3" />
         <link rel="shortcut icon" href="/favicon.ico?v=3" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var h=window.location.hostname;if(h&&h!=='family-zmanim.vercel.app'&&h!=='localhost'&&h!=='127.0.0.1'){window.location.replace('https://family-zmanim.vercel.app'+window.location.pathname+window.location.search+window.location.hash);}}catch(e){}})();`,

@@ -1155,6 +1155,28 @@ export default function HomePage() {
     });
   }, [sharedViewData, sharedMaxGen, sharedSkippedGens, userGeneration]);
 
+  const handleShareUpcomingPerson = (
+    e: React.MouseEvent,
+    person: DeceasedPerson,
+    upcoming: any,
+    branchName?: string
+  ) => {
+    e.stopPropagation();
+    const fullName = getDeceasedFullName(person);
+    const leiluy = formatLeiluyNishmat(person);
+    const dayNames = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'];
+    const dayName = upcoming?.gregorianDate ? dayNames[new Date(upcoming.gregorianDate).getDay()] : '';
+    const gregStr = upcoming?.gregorianDate
+      ? new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' })
+      : '';
+    const zm = upcoming?.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
+    const zmanimLine = zm ? `\n🌅 *תחילת היארצייט בערב הקודם:* שקיעה ${zm.startShkiaFormatted} | צאה״כ ${zm.startTzeitFormatted}` : '';
+    const branchLine = branchName ? `\n🌿 *ענף משפחתי:* ${branchName}` : '';
+    const appUrl = typeof window !== 'undefined' ? window.location.href : 'https://family-zmanim.vercel.app';
+    const text = `🕯️ *תזכורת יום האזכרה (יארצייט) — ${fullName}*\nלעילוי נשמת: *${leiluy}*${branchLine}\n🗓️ *מועד האזכרה הקרוב:* ${dayName}, ${upcoming.hebrewDateStr} (${gregStr}) — ${formatAnniversaryYearText(upcoming.yearsPassed)}${zmanimLine}\n\nלצפייה ביומן המשפחתי המלא:\n${appUrl}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900 font-sans">
       {/* Top Header Bar */}
@@ -1342,6 +1364,21 @@ export default function HomePage() {
                   >
                     <Link2 className="w-4 h-4" />
                     <span>שלב ענף זה ביומן האישי שלי</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareUrl = typeof window !== 'undefined' ? window.location.href : 'https://family-zmanim.vercel.app';
+                      const branchNames = sharedViewData.branches.map((b) => b.name).join(', ');
+                      const text = `🕯️🎂 *${formatCalendarDisplayName(sharedViewData.calendar.name)}*\nענפים משותפים: ${branchNames}\n\nלצפייה ביומן וסנכרון ליומן הגוגל בטלפון:\n${shareUrl}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white transition rounded-2xl px-4 py-3.5 text-center font-extrabold text-xs shadow-lg shadow-emerald-500/25 active:scale-95 cursor-pointer"
+                    title="שלח קישור ליומן זה בוואטסאפ לבני משפחה"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>שלח בוואטסאפ</span>
                   </button>
 
                   {(() => {
@@ -1598,21 +1635,32 @@ export default function HomePage() {
                               <span className="text-[11px] font-bold text-slate-500 font-serif">
                                 {formatAnniversaryYearText(upcoming.yearsPassed)}
                               </span>
-                              <a
-                                href={getGoogleCalendarDirectAddUrl(
-                                  person,
-                                  upcoming,
-                                  personBranch?.name,
-                                  typeof window !== 'undefined' ? window.location.origin : ''
-                                )}
-                                onClick={(e) => e.stopPropagation()}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
-                              >
-                                <CalendarIcon className="w-3 h-3 text-blue-600" />
-                                <span>הוסף ליומן</span>
-                              </a>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleShareUpcomingPerson(e, person, upcoming, personBranch?.name)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-extrabold text-white bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                                  title="שלח תזכורת בוואטסאפ"
+                                >
+                                  <MessageCircle className="w-3 h-3" />
+                                  <span>וואטסאפ</span>
+                                </button>
+                                <a
+                                  href={getGoogleCalendarDirectAddUrl(
+                                    person,
+                                    upcoming,
+                                    personBranch?.name,
+                                    typeof window !== 'undefined' ? window.location.origin : ''
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/70 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+                                >
+                                  <CalendarIcon className="w-3 h-3 text-blue-600" />
+                                  <span>הוסף ליומן</span>
+                                </a>
+                              </div>
                             </div>
                           </div>
                         );
@@ -2560,22 +2608,33 @@ export default function HomePage() {
                               <span className="text-[11px] font-bold text-slate-500 font-serif">
                                 {formatAnniversaryYearText(upcoming.yearsPassed)}
                               </span>
-                              <a
-                                href={getGoogleCalendarDirectAddUrl(
-                                  person,
-                                  upcoming,
-                                  personBranch?.name,
-                                  typeof window !== 'undefined' ? window.location.origin : '',
-                                  { includeStartShkia: savedZShkia, includeStartTzeit: savedZTzeit }
-                                )}
-                                onClick={(e) => e.stopPropagation()}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
-                              >
-                                <CalendarIcon className="w-3 h-3 text-blue-600 shrink-0" />
-                                <span>הוסף ליומן</span>
-                              </a>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleShareUpcomingPerson(e, person, upcoming, personBranch?.name)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-extrabold text-white bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 rounded-lg transition cursor-pointer whitespace-nowrap"
+                                  title="שלח תזכורת בוואטסאפ"
+                                >
+                                  <MessageCircle className="w-3 h-3 shrink-0" />
+                                  <span>וואטסאפ</span>
+                                </button>
+                                <a
+                                  href={getGoogleCalendarDirectAddUrl(
+                                    person,
+                                    upcoming,
+                                    personBranch?.name,
+                                    typeof window !== 'undefined' ? window.location.origin : '',
+                                    { includeStartShkia: savedZShkia, includeStartTzeit: savedZTzeit }
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+                                >
+                                  <CalendarIcon className="w-3 h-3 text-blue-600 shrink-0" />
+                                  <span>הוסף ליומן</span>
+                                </a>
+                              </div>
                             </div>
                           </div>
                         );
@@ -2586,13 +2645,13 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* View Mode Navigation Tabs & 2-Calendar Sync Bar (No Horizontal Scrollbar) */}
+            {/* View Mode Navigation Tabs & 2-Calendar Sync Bar */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
               {/* Sub-Interface Tabs */}
-              <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl flex-wrap">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl overflow-x-auto no-scrollbar sm:flex-wrap">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0 ${
                     viewMode === 'list'
                       ? 'bg-white text-blue-700 shadow-xs ring-1 ring-slate-200'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -2607,7 +2666,7 @@ export default function HomePage() {
 
                 <button
                   onClick={() => setViewMode('birthdays')}
-                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0 ${
                     viewMode === 'birthdays'
                       ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-emerald-300'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -2622,7 +2681,7 @@ export default function HomePage() {
 
                 <button
                   onClick={() => setViewMode('tree')}
-                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0 ${
                     viewMode === 'tree'
                       ? 'bg-white text-blue-700 shadow-xs ring-1 ring-slate-200'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -2637,7 +2696,7 @@ export default function HomePage() {
 
                 <button
                   onClick={() => setViewMode('missing')}
-                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                  className={`h-9 flex items-center gap-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0 ${
                     viewMode === 'missing'
                       ? 'bg-white text-amber-900 shadow-xs ring-1 ring-amber-300'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -2654,13 +2713,13 @@ export default function HomePage() {
               </div>
 
               {/* 1-Click Sync Bar: 2 Separate Calendars (Memorials vs Simchas in Separate Color) + Generation Filter */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:flex-wrap pb-0.5 sm:pb-0">
                 {googleCalendarSubscribeUrl && (
                   <a
                     href={googleCalendarSubscribeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-gradient-to-l from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer whitespace-nowrap"
+                    className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-gradient-to-l from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer whitespace-nowrap shrink-0"
                     title="יומן 1: סנכרן את יומן ימי הזיכרון (יארצייט מצאת הכוכבים עד השקיעה) ל-Google Calendar"
                   >
                     <Flame className="w-3.5 h-3.5 shrink-0" />
@@ -2673,7 +2732,7 @@ export default function HomePage() {
                     href={googleSimchasSubscribeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-gradient-to-l from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer whitespace-nowrap"
+                    className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-gradient-to-l from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer whitespace-nowrap shrink-0"
                     title="יומן 2: סנכרן את יומן ימי ההולדת, ימי הנישואין והשמחות כיומן שני (בצבע נפרד!) ל-Google Calendar"
                   >
                     <Cake className="w-3.5 h-3.5 shrink-0" />
@@ -2684,7 +2743,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => setIsSyncModalOpen(true)}
-                  className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap"
+                  className="h-9 inline-flex items-center justify-center gap-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0"
                   title="בחר כמה דורות להכניס ליומן והאם להוסיף שעת שקיעה / צאת הכוכבים ליארצייט"
                 >
                   <GitCommit className="w-3.5 h-3.5 text-blue-600 shrink-0" />
@@ -2786,8 +2845,106 @@ export default function HomePage() {
         )}
       </main>
 
+      {/* Mobile App Bottom Navigation Bar (Visible on Mobile & Tablet when inside a Calendar) */}
+      {(currentCalendar || sharedViewData) && (
+        <nav
+          aria-label="ניווט תחתון לנייד"
+          className="fixed bottom-0 inset-x-0 z-40 lg:hidden bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-6px_24px_-4px_rgba(15,23,42,0.12)] pb-safe"
+        >
+          <div className="max-w-lg mx-auto px-2 h-16 grid grid-cols-5 items-center">
+            {currentCalendar ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition cursor-pointer ${
+                    viewMode === 'list' ? 'text-amber-700 font-black' : 'text-slate-500 font-semibold'
+                  }`}
+                >
+                  <Flame className={`w-5 h-5 ${viewMode === 'list' ? 'text-amber-600' : 'text-slate-400'}`} />
+                  <span className="text-[10px] leading-tight">יארצייט ({deceasedOnlyCount})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('birthdays')}
+                  className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition cursor-pointer ${
+                    viewMode === 'birthdays' ? 'text-emerald-700 font-black' : 'text-slate-500 font-semibold'
+                  }`}
+                >
+                  <Cake className={`w-5 h-5 ${viewMode === 'birthdays' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <span className="text-[10px] leading-tight">שמחות ({livingCount})</span>
+                </button>
+
+                {/* Center Prominent Share & Send CTA */}
+                <div className="flex items-center justify-center -mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShareModalInitialTab('share');
+                      setIsShareModalOpen(true);
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-600/35 border-2 border-white active:scale-95 transition cursor-pointer"
+                    title="שלח ושתף יומן מהטלפון הסלולרי"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    <span className="text-[10px] font-black leading-none mt-0.5">שלח</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('tree')}
+                  className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition cursor-pointer ${
+                    viewMode === 'tree' ? 'text-blue-700 font-black' : 'text-slate-500 font-semibold'
+                  }`}
+                >
+                  <FolderTree className={`w-5 h-5 ${viewMode === 'tree' ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <span className="text-[10px] leading-tight">עץ משפחה</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSyncModalOpen(true)}
+                  className="flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl text-slate-500 hover:text-indigo-700 font-semibold transition cursor-pointer"
+                >
+                  <CalendarIcon className="w-5 h-5 text-indigo-600" />
+                  <span className="text-[10px] leading-tight">סנכרון יומן</span>
+                </button>
+              </>
+            ) : (
+              /* Shared View Mobile Bottom Bar */
+              <div className="col-span-5 flex items-center justify-between gap-2 px-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTreePositionModalOpen(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-purple-50 text-purple-900 border border-purple-200 font-bold text-xs cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span className="truncate">היכן אני בעץ?</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!sharedViewData) return;
+                    const shareUrl = typeof window !== 'undefined' ? window.location.href : 'https://family-zmanim.vercel.app';
+                    const branchNames = sharedViewData.branches.map((b) => b.name).join(', ');
+                    const text = `🕯️🎂 *${formatCalendarDisplayName(sharedViewData.calendar.name)}*\nענפים משותפים: ${branchNames}\n\nלצפייה ביומן וסנכרון ליומן הגוגל בטלפון:\n${shareUrl}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 text-white font-extrabold text-xs shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 shrink-0" />
+                  <span>שלח בוואטסאפ</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+      )}
+
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200/80 py-8 text-center text-xs text-slate-500 mt-12 space-y-1">
+      <footer className="bg-white border-t border-slate-200/80 py-8 pb-24 lg:pb-8 text-center text-xs text-slate-500 mt-12 space-y-1">
         <p className="font-semibold text-slate-700 font-serif">
           לוח שנה משפחתי &bull; ממשק ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ממשק שמחות (ימי הולדת ונישואין) ועץ המשפחה
         </p>

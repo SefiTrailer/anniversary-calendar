@@ -1,0 +1,31 @@
+{
+  "name": "זמנים משפחתיים - לוח שנה משפחתי",
+  "short_name": "זמנים משפחתיים",
+  "description": "לוח שנה משפחתי עברי: ימי זיכרון (יארצייט מצאת הכוכבים עד השקיעה), ימי הולדת, שמחות ועץ משפחה בסנכרון ליומן גוגל",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "dir": "rtl",
+  "lang": "he",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg?v=3",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png?v=3",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png?v=3",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

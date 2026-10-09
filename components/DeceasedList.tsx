@@ -31,6 +31,10 @@ import {
   GitCommit,
   GitBranch,
   Layers,
+  MessageCircle,
+  Share2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 // Helper to identify Holocaust victims (both direct ancestors and siblings/collateral relatives)
@@ -84,6 +88,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
   const [selectedGenerationFilter, setSelectedGenerationFilter] = useState<string>('all'); // Exact Gen N
   const [sortBy, setSortBy] = useState<'upcoming' | 'name' | 'branch'>('upcoming');
   const [visibleCount, setVisibleCount] = useState<number>(36);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState<boolean>(false);
 
   const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
 
@@ -263,11 +268,79 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
   ]);
 
 
+  const activeAdvancedFilterCount =
+    (selectedMainBranch !== 'all' ? 1 : 0) +
+    (selectedGrandparentBranch !== 'all' ? 1 : 0) +
+    (selectedGreatGrandparentBranch !== 'all' ? 1 : 0) +
+    (maxGenerationsFilter !== 'all' ? 1 : 0) +
+    (selectedGenerationFilter !== 'all' ? 1 : 0);
+
+  const handleShareYahrzeit = async (
+    e: React.MouseEvent,
+    person: DeceasedPerson,
+    upcoming: any,
+    branchName?: string,
+    mode: 'whatsapp' | 'native' = 'whatsapp'
+  ) => {
+    e.stopPropagation();
+    const { fullName } = getDeceasedFormattedParts(person);
+    const leiluy = formatLeiluyNishmat(person);
+    const origDate = formatDisplayDateWithGregorian(
+      person.hebrew_day,
+      person.hebrew_month,
+      person.hebrew_year,
+      person.gregorian_original_date
+    );
+    const originUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://family-zmanim.vercel.app';
+    const lineageUrl = `${originUrl}?lineage=${person.id}`;
+
+    let upcomingBlock = '';
+    if (upcoming) {
+      const dayName = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת קודש'][
+        new Date(upcoming.gregorianDate).getDay()
+      ];
+      const gregStr = new Date(upcoming.gregorianDate).toLocaleDateString('he-IL', {
+        day: 'numeric',
+        month: 'numeric',
+        year: 'numeric',
+      });
+      const zm = upcoming.gregorianDateStr ? getHalachicYahrzeitTimes(upcoming.gregorianDateStr) : null;
+      upcomingBlock =
+        `\n📅 *מועד היארצייט הקרוב:* ${dayName}, ${upcoming.hebrewDateStr} (${gregStr})` +
+        (zm ? `\n🌅 *מתחיל בערב הקודם:* שקיעה ${zm.startShkiaFormatted} | צאה״כ ${zm.startTzeitFormatted}` : '');
+    }
+
+    const message =
+      `🕯️ *תזכורת יום זיכרון (יארצייט) משפחתי*\n` +
+      `*${fullName}*\n` +
+      `לעילוי נשמת: *${leiluy}*\n` +
+      (branchName ? `ענף משפחתי: ${branchName}\n` : '') +
+      `תאריך פטירה: ${origDate}` +
+      upcomingBlock +
+      `\n\n🔗 לצפייה בשרשרת הייחוס ולהוספה ליומן:\n${lineageUrl}`;
+
+    if (mode === 'native' && typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `יום זיכרון — ${fullName}`,
+          text: message,
+          url: lineageUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       {/* Search, Filter & Sort Controls Bar */}
-      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="bg-white p-3.5 sm:p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-3.5 sm:space-y-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
           {/* Search Box */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -288,24 +361,45 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
             )}
           </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="text-xs font-bold text-slate-500">מיון:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl px-3 py-2 cursor-pointer outline-none transition"
+          {/* Sort Selector & Mobile Filter Drawer Toggle */}
+          <div className="flex items-center justify-between sm:justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+              className={`sm:hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                isMobileFiltersOpen || activeAdvancedFilterCount > 0
+                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                  : 'bg-slate-100 text-slate-700 border-slate-200'
+              }`}
             >
-              <option value="upcoming">היארצייט הקרוב ביותר</option>
-              <option value="name">לפי שם משפחה</option>
-              <option value="branch">לפי ענף משפחתי</option>
-            </select>
+              <Filter className="w-3.5 h-3.5 shrink-0" />
+              <span>סינון ענפים ודורות</span>
+              {activeAdvancedFilterCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-white text-blue-700 text-[10px] font-black">
+                  {activeAdvancedFilterCount}
+                </span>
+              )}
+              {isMobileFiltersOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs font-bold text-slate-500 hidden xs:inline">מיון:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl px-2.5 sm:px-3 py-2 cursor-pointer outline-none transition"
+              >
+                <option value="upcoming">היארצייט הקרוב ביותר</option>
+                <option value="name">לפי שם משפחה</option>
+                <option value="branch">לפי ענף משפחתי</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* Category Filter Pills: All / Holocaust / Ancestors */}
-        <div className="flex items-center gap-2 flex-wrap pb-2 pt-1 border-b border-slate-100/80">
+        {/* Category Filter Pills: Horizontal Scroll on Mobile, Wrap on Desktop */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:flex-wrap pb-2 pt-1 border-b border-slate-100/80">
           <span className="text-xs font-bold text-slate-500 shrink-0 ml-1">קטגוריה:</span>
           
           <button
@@ -392,7 +486,8 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
           </button>
         </div>
 
-        {/* Hierarchical Branch Filtering: Main Branch (Gen 2) -> Grandparent (Gen 3) -> Great-Grandparent (Gen 4) */}
+        {/* Hierarchical Branch & Generation Filtering (Collapsible on Mobile, Always Open on Desktop) */}
+        <div className={`${isMobileFiltersOpen ? 'block' : 'hidden sm:block'} space-y-3.5`}>
         <div className="bg-slate-50/70 rounded-2xl p-3.5 border border-slate-200/80 space-y-3">
           {/* Level 1: Main Branch (ענף מרכזי — הורים / דור 2) */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -608,6 +703,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
             </select>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Holocaust Category Banner */}
@@ -686,7 +782,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                   style={{ backgroundColor: branch?.color || '#2563eb' }}
                 />
 
-                <div className="p-5 sm:p-6 flex-1 flex flex-col justify-between gap-4">
+                <div className="p-4 sm:p-6 flex-1 flex flex-col justify-between gap-4">
                   {/* Top Section: Badges Row + Vertically Centered Name Block */}
                   <div className="space-y-3">
                     {/* Top Header: Branch Badge, Generation Badge & Admin Actions */}
@@ -735,7 +831,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                       </div>
 
                       {isAdmin && (
-                        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition">
+                        <div className="flex items-center gap-1 opacity-100 sm:opacity-70 sm:group-hover:opacity-100 transition">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -767,10 +863,10 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                     </div>
 
                     {/* Deceased Names Header - Uniform height & vertical centering */}
-                    <div className="min-h-[112px] flex flex-col justify-center py-1">
-                      <h3 className="text-2xl font-black text-slate-900 tracking-tight font-serif leading-snug">
+                    <div className="min-h-[96px] sm:min-h-[112px] flex flex-col justify-center py-1">
+                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-serif leading-snug">
                         {showTitle && (
-                          <span className="text-xl font-bold text-amber-800/90 ml-1.5 inline">
+                          <span className="text-lg sm:text-xl font-bold text-amber-800/90 ml-1.5 inline">
                             {cleanTitle}
                           </span>
                         )}
@@ -796,7 +892,7 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                   {/* Bottom Section: Aligned Dates, Upcoming Yahrzeit & Notes */}
                   <div className="space-y-3.5 mt-auto">
                     {/* Hebrew Date Primary, Gregorian Original in Parentheses */}
-                    <div className="bg-gradient-to-r from-amber-50/70 via-amber-50/40 to-slate-50 p-3.5 rounded-2xl border border-amber-200/70 space-y-1 shadow-2xs min-h-[76px] flex flex-col justify-center">
+                    <div className="bg-gradient-to-r from-amber-50/70 via-amber-50/40 to-slate-50 p-3.5 rounded-2xl border border-amber-200/70 space-y-1 shadow-2xs min-h-[72px] flex flex-col justify-center">
                       <span className="text-[11px] font-bold text-amber-900 block font-serif">
                         תאריך פטירה מקורי:
                       </span>
@@ -872,18 +968,38 @@ export const DeceasedList: React.FC<DeceasedListProps> = ({
                           )}
                         </div>
 
-                        {/* Instant 1-Click Google Calendar Push Button */}
-                        <div className="pt-1 flex items-center justify-end">
+                        {/* Mobile-first Quick Action Row: WhatsApp Share + Native Share + Google Calendar */}
+                        <div className="pt-1.5 flex items-center justify-between gap-1.5 flex-wrap border-t border-slate-200/60">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => handleShareYahrzeit(e, person, upcoming, branch?.name, 'whatsapp')}
+                              className="inline-flex items-center gap-1 text-[11px] font-extrabold text-white bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1.5 rounded-xl transition shadow-2xs active:scale-95 cursor-pointer"
+                              title="שלח תזכורת יארצייט בוואטסאפ"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>שלח בוואטסאפ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleShareYahrzeit(e, person, upcoming, branch?.name, 'native')}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/90 px-2.5 py-1.5 rounded-xl transition shadow-2xs active:scale-95 cursor-pointer"
+                              title="שתף תזכורת מהטלפון"
+                            >
+                              <Share2 className="w-3.5 h-3.5 text-blue-600" />
+                              <span>שתף</span>
+                            </button>
+                          </div>
                           <a
                             href={getGoogleCalendarDirectAddUrl(person, upcoming, branch?.name, typeof window !== 'undefined' ? window.location.origin : '')}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 border border-blue-200/90 px-3 py-1.5 rounded-xl transition shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 border border-blue-200/90 px-2.5 py-1.5 rounded-xl transition shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
                             title="פתח ושמור אירוע זה ישירות ביומן גוגל שלך ללא המתנה"
                           >
                             <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
-                            <span>הוסף מיד ל-Google Calendar</span>
+                            <span>יומן גוגל</span>
                           </a>
                         </div>
                       </div>

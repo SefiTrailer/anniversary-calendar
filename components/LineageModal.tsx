@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, ArrowLeft, User, Heart, Calendar, MapPin } from 'lucide-react';
+import { X, GitCommit, Check, Copy, ExternalLink, Flame, ArrowDown, ArrowLeft, User, Heart, Calendar, MapPin, MessageCircle, Share2 } from 'lucide-react';
 import { DeceasedPerson } from '@/lib/types';
 import {
   getDeceasedFullName,
@@ -135,6 +135,10 @@ export default function LineageModal({
     return `${connector} ${step.name}`;
   }).join(' ➔ ');
 
+  const targetFormatted = getDeceasedFormattedParts(person);
+  const totalGenerations = rawPath.length;
+  const genInfo = getGenerationRelationInfo(person, userGeneration);
+
   const handleCopyLink = () => {
     if (typeof window !== 'undefined') {
       const url = `${window.location.origin}${window.location.pathname}?lineage=${person.id}`;
@@ -150,42 +154,66 @@ export default function LineageModal({
     setTimeout(() => setCopiedText(false), 2500);
   };
 
-  const targetFormatted = getDeceasedFormattedParts(person);
-  const totalGenerations = rawPath.length;
-  const genInfo = getGenerationRelationInfo(person, userGeneration);
+  const handleShareLineage = async (mode: 'whatsapp' | 'native') => {
+    const url = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?lineage=${person.id}` : 'https://family-zmanim.vercel.app';
+    const dateStr = formatDisplayDateWithGregorian(person.hebrew_day, person.hebrew_month, person.hebrew_year, person.gregorian_original_date);
+    const text = `🌳 *שרשרת היוחסין המשפחתית — ${targetFormatted.fullName}*\n👥 *קרבה:* ${genInfo.fullDescription} (${totalGenerations} דורות בעץ)\n\n🔗 *מסלול הייחוס:*\n${chainSentence}\n\n📅 *תאריך:* ${dateStr}\nלצפייה ביומן המשפחתי:\n${url}`;
+    if (mode === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `שרשרת היוחסין — ${targetFormatted.fullName}`,
+          text,
+          url,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl my-8 overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl my-0 sm:my-8 overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden bg-slate-900 pt-2.5 pb-0.5 flex justify-center shrink-0">
+          <div className="w-10 h-1.5 rounded-full bg-white/25" />
+        </div>
+
         {/* Header */}
-        <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-amber-950 text-white px-6 py-5 flex items-center justify-between shrink-0 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-inner">
+        <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-amber-950 text-white px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-inner shrink-0">
               <GitCommit className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black tracking-tight font-serif">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black tracking-tight font-serif">
                   שרשרת הייחוס והקרבה
                 </h2>
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 font-serif">
                   {totalGenerations} דורות בעץ
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-serif mt-0.5">
+              <p className="text-xs text-slate-300 font-serif mt-0.5 truncate">
                 מסלול הייחוס הרציף עד {targetFormatted.fullName}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white transition p-2 rounded-xl hover:bg-white/10 cursor-pointer"
+            className="text-slate-400 hover:text-white transition p-2 rounded-xl hover:bg-white/10 cursor-pointer shrink-0"
             title="סגור"
           >
             <X className="w-5 h-5" />
@@ -193,7 +221,7 @@ export default function LineageModal({
         </div>
 
         {/* Content Flow */}
-        <div className="p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 flex-1 bg-slate-50/50">
           {/* Quick Relationship Banner */}
           <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -229,7 +257,25 @@ export default function LineageModal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleShareLineage('whatsapp')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs transition cursor-pointer active:scale-95"
+                  title="שלח את שרשרת היוחסין בוואטסאפ"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>שלח בוואטסאפ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleShareLineage('native')}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 transition cursor-pointer active:scale-95"
+                  title="שתף מהטלפון"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>שתף</span>
+                </button>
                 {onOpenTreePosition && (
                   <button
                     type="button"
